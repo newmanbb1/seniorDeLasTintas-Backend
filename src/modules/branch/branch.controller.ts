@@ -1,34 +1,76 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { BranchService } from './branch.service';
-import { CreateBranchDto } from './dto/create-branch.dto';
-import { UpdateBranchDto } from './dto/update-branch.dto';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
+import {
+  ApiBadRequestResponse,
+  ApiBody,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
+import {
+  ApiCreatedWrapped,
+  ApiErrorResponseDto,
+  ApiOkWrapped,
+  ok,
+} from "src/common/response";
+import { BranchService } from "./branch.service";
+import { CreateBranchDto } from "./dto/create-branch.dto";
+import { UpdateBranchDto } from "./dto/update-branch.dto";
+import { FilterBranch } from "./dto/fiter-branch.dto";
 
-@Controller('branch')
+@ApiTags("branch")
+@ApiBadRequestResponse({ type: ApiErrorResponseDto })
+@ApiNotFoundResponse({ type: ApiErrorResponseDto })
+@Controller("branch")
 export class BranchController {
   constructor(private readonly branchService: BranchService) {}
 
   @Post()
-  create(@Body() createBranchDto: CreateBranchDto) {
-    return this.branchService.create(createBranchDto);
+  @ApiOperation({ summary: "Create branch" })
+  @ApiBody({ type: CreateBranchDto })
+  @ApiCreatedWrapped()
+  async create(@Body() createBranchDto: CreateBranchDto) {
+    return ok(await this.branchService.create(createBranchDto));
   }
 
   @Get()
-  findAll() {
-    return this.branchService.findAll();
+  @ApiOperation({ summary: "List branches" })
+  @ApiOkWrapped()
+  async findAll(@Query() filters:FilterBranch) {
+    return ok(await this.branchService.findAll(filters));
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.branchService.findOne(+id);
+  @Get(":id")
+  @ApiOperation({ summary: "Get branch by id" })
+  @ApiOkWrapped()
+  async findOne(@Param("id", ParseUUIDPipe) id: string) {
+    return ok(await this.branchService.findOne(id));
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateBranchDto: UpdateBranchDto) {
-    return this.branchService.update(+id, updateBranchDto);
+  @Patch(":id")
+  @ApiOperation({ summary: "Update branch" })
+  @ApiBody({ type: UpdateBranchDto })
+  @ApiOkWrapped()
+  async update(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() updateBranchDto: UpdateBranchDto,
+  ) {
+    return ok(await this.branchService.update(id, updateBranchDto));
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.branchService.remove(+id);
+  @Delete(":id")
+  @ApiOperation({ summary: "Soft-delete branch" })
+  @ApiOkWrapped()
+  async remove(@Param("id", ParseUUIDPipe) id: string) {
+    return ok(await this.branchService.remove(id));
   }
 }

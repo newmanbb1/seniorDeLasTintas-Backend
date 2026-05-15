@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config'; 
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BranchModule } from './modules/branch/branch.module';
-import { UserModule } from './modules/user/user.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { StockTransferModule } from './modules/stock-transfer/stock-transfer.module';
 import { EmployeeModule } from './modules/employee/employee.module';
+import { ChatbotModule } from './modules/chatbot/chatbot.module';
 
 @Module({
   imports: [
@@ -28,16 +28,16 @@ import { EmployeeModule } from './modules/employee/employee.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true, // true solo para desarrollo
+        synchronize: true, // true solo para desarrollo colocar false para produccion
       }),
     }),
     BranchModule,
-    UserModule,
     SupplyModule,
     InventoryModule,
     AttendanceModule,
     StockTransferModule,
-    EmployeeModule
+    EmployeeModule,
+    ChatbotModule
 
   ],
   controllers: [],

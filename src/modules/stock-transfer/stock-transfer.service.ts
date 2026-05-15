@@ -1,26 +1,236 @@
-import { Injectable } from '@nestjs/common';
-import { CreateStockTransferDto } from './dto/create-stock-transfer.dto';
-import { UpdateStockTransferDto } from './dto/update-stock-transfer.dto';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import { IsNull, Like, Repository } from "typeorm";
+import { StockTransfer, StockTransferStatus } from "./entities/stock-transfer.entity";
+import { Branch } from "../branch/entities/branch.entity";
+import { Supply } from "../supply/entities/supply.entity";
+import { Inventory } from "../inventory/entities/inventory.entity";
+import { CreateStockTransferDto } from "./dto/create-stock-transfer.dto";
+import { UpdateStockTransferDto } from "./dto/update-stock-transfer.dto";
+import { FilterStockTransfer } from "./dto/filter-stock-transfer.dto";
 
 @Injectable()
 export class StockTransferService {
-  create(createStockTransferDto: CreateStockTransferDto) {
-    return 'This action adds a new stockTransfer';
+  constructor(
+    @InjectRepository(StockTransfer)
+    private readonly stockTransferRepository: Repository<StockTransfer>,
+    @InjectRepository(Branch)
+    private readonly branchRepository: Repository<Branch>,
+    @InjectRepository(Supply)
+    private readonly supplyRepository: Repository<Supply>,
+    @InjectRepository(Inventory)
+    private readonly inventoryRepository: Repository<Inventory>,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private auditUserId(): string {
+    return (
+      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
+      "00000000-0000-4000-8000-000000000001"
+    );
   }
 
-  findAll() {
-    return `This action returns all stockTransfer`;
+  async create(dto: CreateStockTransferDto): Promise<StockTransfer> {
+    const { origin_branch_id, destination_branch_id, supply_id, quantity } = dto;
+
+    if (origin_branch_id === destination_branch_id) {
+      throw new BadRequestException(
+        "La sucursal de origen y destino no pueden ser iguales.",
+      );
+    }
+
+    const originBranch = await this.branchRepository.findOne({
+      where: { id: origin_branch_id, deleted_at: IsNull() },
+    });
+    if (!originBranch) {
+      throw new NotFoundException(
+        `La sucursal de origen con ID "${origin_branch_id}" no existe o está eliminada.`,
+      );
+    }
+
+    const destinationBranch = await this.branchRepository.findOne({
+      where: { id: destination_branch_id, deleted_at: IsNull() },
+    });
+    if (!destinationBranch) {
+      throw new NotFoundException(
+        `La sucursal de destino con ID "${destination_branch_id}" no existe o está eliminada.`,
+      );
+    }
+
+    const supply = await this.supplyRepository.findOne({
+      where: { id: supply_id, deleted_at: IsNull() },
+    });
+    if (!supply) {
+      throw new NotFoundException(
+        `El insumo con ID "${supply_id}" no existe o está eliminado.`,
+      );
+    }
+
+    const originInventory = await this.inventoryRepository.findOne({
+      where: { branch: { id: origin_branch_id }, supply: { id: supply_id } },
+    });
+    if (!originInventory) {
+      throw new BadRequestException(
+        `No existe inventario del insumo "${supply.name}" en la sucursal "${originBranch.name}".`,
+      );
+    }
+
+    if (originInventory.current_quantity < quantity) {
+      throw new BadRequestException(
+        `Stock insuficiente. Cantidad disponible: ${originInventory.current_quantity}, solicitada: ${quantity}.`,
+      );
+    }
+
+    const stockTransfer = this.stockTransferRepository.create({
+      ...dto,
+      status: StockTransferStatus.InTransit,
+      created_by: this.auditUserId(),
+    });
+    return this.stockTransferRepository.save(stockTransfer);
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} stockTransfer`;
+  async findAll(
+    filters: FilterStockTransfer,
+  ): Promise<{ data: StockTransfer[]; meta: { total: number; limit: number; offset: number } }> {
+    const {
+      limit = 10,
+      offset = 0,
+      origin_branch_id,
+      destination_branch_id,
+      supply_id,
+      status,
+    } = filters;
+
+    const where: any = { deleted_at: IsNull() };
+
+    if (origin_branch_id) {
+      where.origin_branch = { id: origin_branch_id };
+    }
+    if (destination_branch_id) {
+      where.destination_branch = { id: destination_branch_id };
+    }
+    if (supply_id) {
+      where.supply = { id: supply_id };
+    }
+    if (status) {
+      where.status = status;
+    }
+
+    const [data, total] = await this.stockTransferRepository.findAndCount({
+      where,
+      relations: ["origin_branch", "destination_branch", "supply"],
+      take: limit,
+      skip: offset,
+      order: { request_date: "DESC" },
+    });
+
+    return { data, meta: { total, limit, offset } };
   }
 
-  update(id: number, updateStockTransferDto: UpdateStockTransferDto) {
-    return `This action updates a #${id} stockTransfer`;
+  async findOne(id: string): Promise<StockTransfer> {
+    const stockTransfer = await this.stockTransferRepository.findOne({
+      where: { id },
+      relations: ["origin_branch", "destination_branch", "supply"],
+    });
+    if (!stockTransfer) {
+      throw new NotFoundException(`Traspaso con ID "${id}" no encontrado`);
+    }
+    return stockTransfer;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} stockTransfer`;
+  async update(id: string, dto: UpdateStockTransferDto): Promise<StockTransfer> {
+    const stockTransfer = await this.findOne(id);
+
+    if (stockTransfer.status !== StockTransferStatus.InTransit) {
+      throw new BadRequestException(
+        `No se puede modificar un traspaso que ya está "${stockTransfer.status}".`,
+      );
+    }
+
+    Object.assign(stockTransfer, dto);
+    stockTransfer.updated_by = this.auditUserId();
+    return this.stockTransferRepository.save(stockTransfer);
+  }
+
+  async receive(id: string): Promise<StockTransfer> {
+    const stockTransfer = await this.findOne(id);
+
+    if (stockTransfer.status !== StockTransferStatus.InTransit) {
+      throw new BadRequestException(
+        `El traspaso no puede ser recibido. Estado actual: "${stockTransfer.status}".`,
+      );
+    }
+
+    const destinationInventory = await this.inventoryRepository.findOne({
+      where: {
+        branch: { id: stockTransfer.destination_branch.id },
+        supply: { id: stockTransfer.supply.id },
+      },
+    });
+
+    if (destinationInventory) {
+      destinationInventory.current_quantity += stockTransfer.quantity;
+      destinationInventory.updated_by = this.auditUserId();
+      await this.inventoryRepository.save(destinationInventory);
+    } else {
+      const newInventory = this.inventoryRepository.create({
+        branch: stockTransfer.destination_branch,
+        supply: stockTransfer.supply,
+        current_quantity: stockTransfer.quantity,
+        minimum_stock: 0,
+        created_by: this.auditUserId(),
+      });
+      await this.inventoryRepository.save(newInventory);
+    }
+
+    const originInventory = await this.inventoryRepository.findOne({
+      where: {
+        branch: { id: stockTransfer.origin_branch.id },
+        supply: { id: stockTransfer.supply.id },
+      },
+    });
+    if (originInventory) {
+      originInventory.current_quantity -= stockTransfer.quantity;
+      originInventory.updated_by = this.auditUserId();
+      await this.inventoryRepository.save(originInventory);
+    }
+
+    stockTransfer.status = StockTransferStatus.Received;
+    stockTransfer.reception_date = new Date();
+    stockTransfer.updated_by = this.auditUserId();
+    return this.stockTransferRepository.save(stockTransfer);
+  }
+
+  async reject(id: string): Promise<StockTransfer> {
+    const stockTransfer = await this.findOne(id);
+
+    if (stockTransfer.status !== StockTransferStatus.InTransit) {
+      throw new BadRequestException(
+        `El traspaso no puede ser rechazado. Estado actual: "${stockTransfer.status}".`,
+      );
+    }
+
+    stockTransfer.status = StockTransferStatus.Rejected;
+    stockTransfer.updated_by = this.auditUserId();
+    return this.stockTransferRepository.save(stockTransfer);
+  }
+
+  async remove(id: string): Promise<{ id: string; deleted: true }> {
+    const stockTransfer = await this.findOne(id);
+
+    if (stockTransfer.status === StockTransferStatus.InTransit) {
+      throw new ConflictException(
+        "No se puede eliminar un traspaso en estado 'En Tránsito'. Rechace o reciba el traspaso primero.",
+      );
+    }
+
+    await this.stockTransferRepository.softDelete({ id });
+    return { id, deleted: true };
   }
 }

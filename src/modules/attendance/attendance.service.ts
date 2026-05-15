@@ -1,26 +1,279 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAttendanceDto } from './dto/create-attendance.dto';
-import { UpdateAttendanceDto } from './dto/update-attendance.dto';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectRepository } from "@nestjs/typeorm";
+import { IsNull, Repository } from "typeorm";
+import { Attendance, AttendanceEntryStatus } from "./entities/attendance.entity";
+import { Employee } from "../employee/entities/employee.entity";
+import { Branch } from "../branch/entities/branch.entity";
+import { CreateAttendanceDto } from "./dto/create-attendance.dto";
+import { UpdateAttendanceDto } from "./dto/update-attendance.dto";
+import { FilterAttendance } from "./dto/filter-attendance.dto";
+import { CheckOutDto } from "./dto/check-out.dto";
 
 @Injectable()
 export class AttendanceService {
-  create(createAttendanceDto: CreateAttendanceDto) {
-    return 'This action adds a new attendance';
+  constructor(
+    @InjectRepository(Attendance)
+    private readonly attendanceRepository: Repository<Attendance>,
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(Branch)
+    private readonly branchRepository: Repository<Branch>,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private auditUserId(): string {
+    return (
+      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
+      "00000000-0000-4000-8000-000000000001"
+    );
   }
 
-  findAll() {
-    return `This action returns all attendance`;
+  private getCurrentDate(): string {
+    return new Date().toISOString().split("T")[0];
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} attendance`;
+  private getCurrentTimestamp(): Date {
+    return new Date();
   }
 
-  update(id: number, updateAttendanceDto: UpdateAttendanceDto) {
-    return `This action updates a #${id} attendance`;
+  private calculateHoursWorked(checkIn: Date, checkOut: Date): string {
+    const diffMs = checkOut.getTime() - checkIn.getTime();
+    const hours = diffMs / (1000 * 60 * 60);
+    return hours.toFixed(2);
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} attendance`;
+  private determineStatus(checkIn: Date): AttendanceEntryStatus {
+    const hour = checkIn.getHours();
+    const minute = checkIn.getMinutes();
+    const checkInTime = hour * 60 + minute;
+    const limitTime = 9 * 60;
+
+    if (checkInTime <= limitTime) {
+      return AttendanceEntryStatus.Punctual;
+    }
+    return AttendanceEntryStatus.Late;
+  }
+
+  async checkIn(dto: CreateAttendanceDto): Promise<Attendance> {
+    const { employee_id, pin } = dto;
+
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employee_id, deleted_at: IsNull() },
+      relations: ["branch"],
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+    }
+
+    if (!employee.active) {
+      throw new ForbiddenException("El empleado está inactivo");
+    }
+
+    if (employee.access_pin !== pin) {
+      throw new BadRequestException("PIN incorrecto");
+    }
+
+    const today = this.getCurrentDate();
+    const existingAttendance = await this.attendanceRepository.findOne({
+      where: {
+        employee: { id: employee_id },
+        register_date: today,
+      },
+    });
+
+    if (existingAttendance && !existingAttendance.deleted_at) {
+      throw new ConflictException(
+        `Ya existe un registro de entrada para hoy. Hora de ingreso: ${existingAttendance.check_in}`,
+      );
+    }
+
+    const checkInTime = this.getCurrentTimestamp();
+    const status = this.determineStatus(checkInTime);
+
+    const attendance = this.attendanceRepository.create({
+      employee,
+      register_date: today,
+      check_in: checkInTime,
+      check_in_status: status,
+      check_out: null,
+      hours_worked: "0",
+      created_by: this.auditUserId(),
+    });
+
+    return this.attendanceRepository.save(attendance);
+  }
+
+  async checkOut(dto: CheckOutDto): Promise<Attendance> {
+    const { employee_id, pin } = dto;
+
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employee_id, deleted_at: IsNull() },
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+    }
+
+    if (!employee.active) {
+      throw new ForbiddenException("El empleado está inactivo");
+    }
+
+    if (employee.access_pin !== pin) {
+      throw new BadRequestException("PIN incorrecto");
+    }
+
+    const today = this.getCurrentDate();
+    const attendance = await this.attendanceRepository.findOne({
+      where: {
+        employee: { id: employee_id },
+        register_date: today,
+      },
+    });
+
+    if (!attendance) {
+      throw new NotFoundException(
+        "No existe registro de entrada para hoy. Debe registrar entrada primero.",
+      );
+    }
+
+    if (attendance.check_out) {
+      throw new ConflictException(
+        `Ya has registrado tu salida hoy a las ${attendance.check_out}`,
+      );
+    }
+
+    const checkOutTime = this.getCurrentTimestamp();
+    const hoursWorked = this.calculateHoursWorked(attendance.check_in, checkOutTime);
+
+    attendance.check_out = checkOutTime;
+    attendance.hours_worked = hoursWorked;
+    attendance.updated_by = this.auditUserId();
+
+    return this.attendanceRepository.save(attendance);
+  }
+
+  async findAll(
+    filters: FilterAttendance,
+  ): Promise<{ data: Attendance[]; meta: { total: number; limit: number; offset: number } }> {
+    const {
+      limit = 10,
+      offset = 0,
+      employee_id,
+      register_date,
+      check_in_status,
+      branch_id,
+    } = filters;
+
+    const where: any = { deleted_at: IsNull() };
+
+    if (employee_id) {
+      where.employee = { id: employee_id };
+    }
+    if (register_date) {
+      where.register_date = register_date;
+    }
+    if (check_in_status) {
+      where.check_in_status = check_in_status;
+    }
+    if (branch_id) {
+      where.employee = { ...where.employee, branch: { id: branch_id } };
+    }
+
+    const [data, total] = await this.attendanceRepository.findAndCount({
+      where,
+      relations: ["employee", "employee.branch"],
+      take: limit,
+      skip: offset,
+      order: { register_date: "DESC", check_in: "DESC" },
+    });
+
+    return { data, meta: { total, limit, offset } };
+  }
+
+  async findOne(id: string): Promise<Attendance> {
+    const attendance = await this.attendanceRepository.findOne({
+      where: { id },
+      relations: ["employee", "employee.branch"],
+    });
+    if (!attendance) {
+      throw new NotFoundException(`Asistencia con ID "${id}" no encontrada`);
+    }
+    return attendance;
+  }
+
+  async update(id: string, dto: UpdateAttendanceDto): Promise<Attendance> {
+    const attendance = await this.findOne(id);
+
+    Object.assign(attendance, dto);
+    attendance.updated_by = this.auditUserId();
+    return this.attendanceRepository.save(attendance);
+  }
+
+  async remove(id: string): Promise<{ id: string; deleted: true }> {
+    const attendance = await this.findOne(id);
+
+    await this.attendanceRepository.softDelete({ id });
+    return { id, deleted: true };
+  }
+
+  async getReportByEmployee(
+    employee_id: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{ data: Attendance[]; summary: any }> {
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employee_id, deleted_at: IsNull() },
+      relations: ["branch"],
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+    }
+
+    const where: any = {
+      employee: { id: employee_id },
+      deleted_at: IsNull(),
+    };
+
+    if (startDate) {
+      where.register_date = require("typeorm").MoreThanOrEqual(startDate);
+    }
+    if (endDate) {
+      where.register_date = require("typeorm").LessThanOrEqual(endDate);
+    }
+
+    const data = await this.attendanceRepository.find({
+      where,
+      order: { register_date: "DESC" },
+    });
+
+    const punctualCount = data.filter(
+      (a) => a.check_in_status === AttendanceEntryStatus.Punctual,
+    ).length;
+    const lateCount = data.filter(
+      (a) => a.check_in_status === AttendanceEntryStatus.Late,
+    ).length;
+
+    const totalHours = data.reduce((sum, a) => sum + parseFloat(a.hours_worked || "0"), 0);
+
+    const summary = {
+      employee_name: employee.full_name,
+      branch_name: employee.branch?.name,
+      total_days: data.length,
+      punctual_days: punctualCount,
+      late_days: lateCount,
+      total_hours: totalHours.toFixed(2),
+      average_hours: data.length > 0 ? (totalHours / data.length).toFixed(2) : "0",
+    };
+
+    return { data, summary };
   }
 }
