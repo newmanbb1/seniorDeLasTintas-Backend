@@ -1,24 +1,44 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config'; 
+import { ConfigModule, ConfigService } from '@nestjs/config'; 
 import { TypeOrmModule } from '@nestjs/typeorm';
-
+import { BranchModule } from './modules/branch/branch.module';
+import { UserModule } from './modules/user/user.module';
+import { SupplyModule } from './modules/supply/supply.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
+import { StockTransferModule } from './modules/stock-transfer/stock-transfer.module';
+import { EmployeeModule } from './modules/employee/employee.module';
 
 @Module({
   imports: [
-    //configuracion para las variables de entorno
+    // 1. Cargamos las variables de entorno primero
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env'
     }),
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_HOST,
-      port: 5432,
-      username: process.env.DB_USERNAME,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      autoLoadEntities: true,
-      synchronize: true, //parte de sincronizacion con las tablas de la base de datos
+
+    // 2. Usamos forRootAsync para esperar a que las variables carguen
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        type: 'postgres',
+        host: configService.get<string>('DB_HOST'),
+        port: configService.get<number>('DB_PORT') || 5432,
+        username: configService.get<string>('DB_USERNAME'),
+        password: configService.get<string>('DB_PASSWORD'),
+        database: configService.get<string>('DB_NAME'),
+        autoLoadEntities: true,
+        synchronize: true, // true solo para desarrollo
+      }),
     }),
+    BranchModule,
+    UserModule,
+    SupplyModule,
+    InventoryModule,
+    AttendanceModule,
+    StockTransferModule,
+    EmployeeModule
+
   ],
   controllers: [],
   providers: [],
