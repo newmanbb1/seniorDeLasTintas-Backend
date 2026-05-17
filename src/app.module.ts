@@ -8,16 +8,16 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { StockTransferModule } from './modules/stock-transfer/stock-transfer.module';
 import { EmployeeModule } from './modules/employee/employee.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { SeedModule } from './modules/seed/seed.module';
 
 @Module({
   imports: [
-    // 1. Cargamos las variables de entorno primero
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env'
     }),
 
-    // 2. Usamos forRootAsync para esperar a que las variables carguen
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -28,9 +28,11 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true, // true solo para desarrollo colocar false para produccion
+        synchronize: true,
       }),
     }),
+    AuthModule,
+    SeedModule,
     BranchModule,
     SupplyModule,
     InventoryModule,
@@ -38,7 +40,6 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
     StockTransferModule,
     EmployeeModule,
     ChatbotModule
-
   ],
   controllers: [],
   providers: [],

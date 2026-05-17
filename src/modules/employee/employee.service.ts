@@ -25,14 +25,15 @@ export class EmployeeService {
     private readonly configService: ConfigService,
   ) {}
 
-  private auditUserId(): string {
+  private getAuditUserId(userId?: string): string {
+    if (userId) return userId;
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
     );
   }
 
-  async create(dto: CreateEmployeeDto): Promise<Employee> {
+  async create(dto: CreateEmployeeDto, userId?: string): Promise<Employee> {
     const { full_name, branch_id } = dto;
 
     const existingEmployee = await this.employeeRepository.findOne({
@@ -55,7 +56,7 @@ export class EmployeeService {
 
     const employee = this.employeeRepository.create({
       ...dto,
-      created_by: this.auditUserId(),
+      created_by: this.getAuditUserId(userId),
     });
     return this.employeeRepository.save(employee);
   }
@@ -103,7 +104,7 @@ export class EmployeeService {
     return employee;
   }
 
-  async update(id: string, dto: UpdateEmployeeDto): Promise<Employee> {
+  async update(id: string, dto: UpdateEmployeeDto, userId?: string): Promise<Employee> {
     const employee = await this.findOne(id);
 
     if (dto.full_name && dto.full_name !== employee.full_name) {
@@ -129,11 +130,11 @@ export class EmployeeService {
     }
 
     Object.assign(employee, dto);
-    employee.updated_by = this.auditUserId();
+    employee.updated_by = this.getAuditUserId(userId);
     return this.employeeRepository.save(employee);
   }
 
-  async remove(id: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
     const employee = await this.findOne(id);
 
     const attendanceCount = await this.attendanceRepository.count({
@@ -146,13 +147,15 @@ export class EmployeeService {
     }
 
     await this.employeeRepository.softDelete({ id });
+    employee.deleted_by = this.getAuditUserId(userId);
+    await this.employeeRepository.save(employee);
     return { id, deleted: true };
   }
 
-  async toggleActive(id: string): Promise<Employee> {
+  async toggleActive(id: string, userId?: string): Promise<Employee> {
     const employee = await this.findOne(id);
     employee.active = !employee.active;
-    employee.updated_by = this.auditUserId();
+    employee.updated_by = this.getAuditUserId(userId);
     return this.employeeRepository.save(employee);
   }
 }

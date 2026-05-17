@@ -29,14 +29,15 @@ export class InventoryService {
     private readonly configService: ConfigService,
   ) {}
 
-  private auditUserId(): string {
+  private getAuditUserId(userId?: string): string {
+    if (userId) return userId;
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
     );
   }
 
-  async create(dto: CreateInventoryDto): Promise<Inventory> {
+  async create(dto: CreateInventoryDto, userId?: string): Promise<Inventory> {
     const { branch_id, supply_id } = dto;
 
     const branch = await this.branchRepository.findOne({
@@ -68,7 +69,7 @@ export class InventoryService {
 
     const inventory = this.inventoryRepository.create({
       ...dto,
-      created_by: this.auditUserId(),
+      created_by: this.getAuditUserId(userId),
     });
     return this.inventoryRepository.save(inventory);
   }
@@ -112,7 +113,7 @@ export class InventoryService {
     return inventory;
   }
 
-  async update(id: string, dto: UpdateInventoryDto): Promise<Inventory> {
+  async update(id: string, dto: UpdateInventoryDto, userId?: string): Promise<Inventory> {
     const inventory = await this.findOne(id);
 
     if (dto.branch_id && dto.branch_id !== inventory.branch.id) {
@@ -166,11 +167,11 @@ export class InventoryService {
     }
 
     Object.assign(inventory, dto);
-    inventory.updated_by = this.auditUserId();
+    inventory.updated_by = this.getAuditUserId(userId);
     return this.inventoryRepository.save(inventory);
   }
 
-  async remove(id: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
     const inventory = await this.findOne(id);
 
     const transferCount = await this.stockTransferRepository.count({
@@ -186,10 +187,12 @@ export class InventoryService {
     }
 
     await this.inventoryRepository.softDelete({ id });
+    inventory.deleted_by = this.getAuditUserId(userId);
+    await this.inventoryRepository.save(inventory);
     return { id, deleted: true };
   }
 
-  async adjustQuantity(id: string, adjustment: number): Promise<Inventory> {
+  async adjustQuantity(id: string, adjustment: number, userId?: string): Promise<Inventory> {
     const inventory = await this.findOne(id);
     const newQuantity = inventory.current_quantity + adjustment;
 
@@ -200,7 +203,7 @@ export class InventoryService {
     }
 
     inventory.current_quantity = newQuantity;
-    inventory.updated_by = this.auditUserId();
+    inventory.updated_by = this.getAuditUserId(userId);
     return this.inventoryRepository.save(inventory);
   }
 }

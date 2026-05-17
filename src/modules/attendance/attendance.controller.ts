@@ -8,9 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from "@nestjs/common";
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiBody,
   ApiNotFoundResponse,
   ApiOperation,
@@ -27,6 +29,11 @@ import { CreateAttendanceDto } from "./dto/create-attendance.dto";
 import { UpdateAttendanceDto } from "./dto/update-attendance.dto";
 import { FilterAttendance } from "./dto/filter-attendance.dto";
 import { CheckOutDto } from "./dto/check-out.dto";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles, GetUser } from "../../common/decorators";
+import { UserRole } from "../auth/entities/user.entity";
+import { AllowAnonymous } from "../../common/guards/allow-anon.decorator";
 
 @ApiTags("attendance")
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -36,7 +43,8 @@ export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Post("check-in")
-  @ApiOperation({ summary: "Registrar hora de entrada del empleado" })
+  @AllowAnonymous()
+  @ApiOperation({ summary: "Registrar hora de entrada del empleado (PIN)" })
   @ApiBody({ type: CreateAttendanceDto })
   @ApiCreatedWrapped()
   async checkIn(@Body() createAttendanceDto: CreateAttendanceDto) {
@@ -44,7 +52,8 @@ export class AttendanceController {
   }
 
   @Post("check-out")
-  @ApiOperation({ summary: "Registrar hora de salida del empleado" })
+  @AllowAnonymous()
+  @ApiOperation({ summary: "Registrar hora de salida del empleado (PIN)" })
   @ApiBody({ type: CheckOutDto })
   @ApiOkWrapped()
   async checkOut(@Body() checkOutDto: CheckOutDto) {
@@ -52,6 +61,9 @@ export class AttendanceController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "List attendance records with pagination and filters" })
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterAttendance) {
@@ -59,6 +71,9 @@ export class AttendanceController {
   }
 
   @Get(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Get attendance record by id" })
   @ApiOkWrapped()
   async findOne(@Param("id", ParseUUIDPipe) id: string) {
@@ -66,6 +81,9 @@ export class AttendanceController {
   }
 
   @Get("report/employee/:employee_id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Get attendance report by employee" })
   @ApiOkWrapped()
   async getReportByEmployee(
@@ -79,20 +97,27 @@ export class AttendanceController {
   }
 
   @Patch(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Update attendance record (admin)" })
   @ApiBody({ type: UpdateAttendanceDto })
   @ApiOkWrapped()
   async update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() updateAttendanceDto: UpdateAttendanceDto,
+    @GetUser('id') userId: string,
   ) {
-    return ok(await this.attendanceService.update(id, updateAttendanceDto));
+    return ok(await this.attendanceService.update(id, updateAttendanceDto, userId));
   }
 
   @Delete(":id")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Soft-delete attendance record" })
   @ApiOkWrapped()
-  async remove(@Param("id", ParseUUIDPipe) id: string) {
-    return ok(await this.attendanceService.remove(id));
+  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser('id') userId: string) {
+    return ok(await this.attendanceService.remove(id, userId));
   }
 }

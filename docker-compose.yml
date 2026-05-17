@@ -43,7 +43,7 @@ services:
     environment:
       SERVER_TYPE: http
       SERVER_PORT: 8080
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_API_KEY: "fixed-api-key-12345"
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://postgres:${DB_PASSWORD}@postgres:5432/evolution
@@ -56,14 +56,35 @@ services:
       QR_CODE_LIMIT: 1
       QR_CODE_ON_CHAT: "true"
       DELETE_TOKEN_ON_DIE: "false"
-      # Webhook apunta al backend NestJS
       WEBHOOK_GLOBAL_ENABLED: "true"
       WEBHOOK_GLOBAL_URL: "http://backend:3000/chatbot/webhook"
-      WEBHOOK_GLOBAL_BY_EVENTS: "false"
+      WEBHOOK_GLOBAL_BY_EVENTS: "true"
       WEBHOOK_EVENTS_ON_QRCODE_UPDATED: "true"
       WEBHOOK_EVENTS_ON_CONNECTION_UPDATE: "true"
       WEBHOOK_EVENTS_ON_MESSAGE_RECEIVED: "true"
+      WEBHOOK_EVENTS_ON_MESSAGES_UPSERT: "true"
       CONFIG_SESSION_PHONE_VERSION: "2.3000.1033893291"
+    command: >
+      bash -c "
+        echo 'Iniciando Evolution API...' &&
+        node dist/main.js &
+        EVOLUTION_PID=$!
+        echo 'Esperando que Evolution API esté listo...'
+        sleep 15
+        echo 'Creando instancia...'
+        curl -s -X POST 'http://localhost:8080/instance/create' \
+          -H 'apikey: fixed-api-key-12345' \
+          -H 'Content-Type: application/json' \
+          -d '{\"instanceName\": \"Señor_de_las_Tintas\", \"qrcode\": true}' || echo 'Instancia ya existe o error'
+        sleep 5
+        echo 'Configurando webhook...'
+        curl -s -X PUT 'http://localhost:8080/instance/Señor_de_las_Tintas' \
+          -H 'apikey: fixed-api-key-12345' \
+          -H 'Content-Type: application/json' \
+          -d '{\"webhookUrl\": \"http://backend:3000/chatbot/webhook\", \"webhookByEvents\": false}' || true
+        echo 'Listo!'
+        wait $EVOLUTION_PID
+      "
     networks:
       - app_network
 
@@ -103,6 +124,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - EVOLUTION_URL=http://evolution:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - INSTANCE_API_KEY=${INSTANCE_API_KEY}
       - INSTANCE_NAME=${INSTANCE_NAME}
       - SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
     depends_on:

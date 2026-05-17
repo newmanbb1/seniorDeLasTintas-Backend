@@ -43,86 +43,105 @@ export class ChatbotService {
   async processMessage(phoneNumber: string, message: string, pushName?: string): Promise<void> {
     const session = await this.sessionService.getOrCreateSession(phoneNumber, pushName);
     const normalizedMessage = message.trim().toLowerCase();
-    
-    await this.logInteraction(phoneNumber, message, "", this.detectIntention(normalizedMessage));
-
-    if (normalizedMessage === "0") {
-      await this.sessionService.resetToMenu(phoneNumber);
-      const response = this.getMenuMessage();
-      await this.sendResponse(phoneNumber, response);
-      return;
-    }
+    const detectedIntention = this.detectIntention(normalizedMessage);
 
     let response = "";
     let newState = session.flow_state;
 
-    switch (session.flow_state) {
-      case WhatsAppFlowState.MenuPrincipal:
-        response = await this.handleMenuOption(normalizedMessage);
-        if (response) {
-          const stateMatch = response.match(/STATE:(\w+)/);
-          if (stateMatch) {
-            newState = stateMatch[1] as WhatsAppFlowState;
-            response = response.replace(/STATE:\w+/, "");
-          }
+    if (normalizedMessage === "0") {
+      response = this.getMenuMessage();
+      newState = WhatsAppFlowState.MenuPrincipal;
+    } else {
+      switch (session.flow_state) {
+        case WhatsAppFlowState.MenuPrincipal: {
+          const result = await this.handleMenuOption(normalizedMessage, message);
+          response = result.response;
+          newState = result.newState;
+          break;
         }
-        break;
 
-      case WhatsAppFlowState.ConsultarStock:
-        response = await this.handleStockConsultation(normalizedMessage, session);
-        break;
+        case WhatsAppFlowState.ConsultarStock:
+          response = await this.handleStockConsultation(normalizedMessage, session);
+          newState = WhatsAppFlowState.ConsultarStock;
+          break;
 
-      case WhatsAppFlowState.ConsultarAsistencia:
-        response = await this.handleAttendanceConsultation(normalizedMessage, session);
-        break;
+        case WhatsAppFlowState.ConsultarAsistencia:
+          response = await this.handleAttendanceConsultation(normalizedMessage, session);
+          newState = WhatsAppFlowState.ConsultarAsistencia;
+          break;
 
-      case WhatsAppFlowState.Horarios:
-        response = await this.handleHorarios(normalizedMessage);
-        break;
+        case WhatsAppFlowState.Horarios:
+          response = await this.getHorariosMessage();
+          newState = WhatsAppFlowState.MenuPrincipal;
+          break;
 
-      default:
-        response = this.getMenuMessage();
-        newState = WhatsAppFlowState.MenuPrincipal;
+        default:
+          response = this.getMenuMessage();
+          newState = WhatsAppFlowState.MenuPrincipal;
+      }
     }
 
-    if (response) {
-      await this.sendResponse(phoneNumber, response);
-      await this.sessionService.updateFlowState(phoneNumber, newState);
+    if (!response) {
+      response = this.getMenuMessage();
+      newState = WhatsAppFlowState.MenuPrincipal;
     }
+
+    await this.logInteraction(phoneNumber, message, response, detectedIntention);
+    await this.sendResponse(phoneNumber, response);
+    await this.sessionService.updateFlowState(phoneNumber, newState);
   }
 
   private getMenuMessage(): string {
-    return "Hola *Señor de las Tintas*\n\n" +
+    return "le habla *Señor de las Tintas*\n\n" +
       "Como te podemos ayudar?\n\n" +
-      "1 - Consultar stock de tintas\n" +
+      "1 - Consultar todo el stock\n" +
       "2 - Horarios y servicios\n" +
-      "3 - Consulta de asistencia\n" +
       "0 - Menu principal\n\n" +
       "Responde con el numero de tu opcion";
   }
 
-  private async handleMenuOption(option: string): Promise<string> {
-    const optionMap: Record<string, { response: string; state: WhatsAppFlowState }> = {
-      "1": { 
-        response: "Stock - Que tinta o producto deseas consultar?\nEjemplo: Canon, Epson, HP\n\nEscribe 0 para volver al menu", 
-        state: WhatsAppFlowState.ConsultarStock 
-      },
-      "2": { 
-        response: await this.getHorariosMessage(), 
-        state: WhatsAppFlowState.MenuPrincipal 
-      },
-      "3": { 
-        response: "Asistencia - Por favor, ingresa el nombre del empleado para consultar su asistencia\n\nEscribe 0 para volver al menu", 
-        state: WhatsAppFlowState.ConsultarAsistencia 
-      },
-    };
+  private async handleMenuOption(
+    option: string,
+    originalMessage?: string,
+  ): Promise<{ response: string; newState: WhatsAppFlowState }> {
+    switch (option) {
+      case "1":
+        return {
+          response: await this.getStockMessage(),
+          newState: WhatsAppFlowState.MenuPrincipal,
+        };
 
-    const selected = optionMap[option];
-    if (selected) {
-      return selected.response + `\nSTATE:${selected.state}`;
+      case "2":
+        return {
+          response: await this.getHorariosMessage(),
+          newState: WhatsAppFlowState.MenuPrincipal,
+        };
+
+      default:
+        const intention = this.detectIntention(originalMessage?.toLowerCase() || option);
+        switch (intention) {
+          case ChatbotIntention.ConsultarStock:
+            return {
+              response: "Stock - Que tinta o producto deseas consultar?\nEjemplo: Canon, Epson, HP\n\nEscribe 0 para volver al menu",
+              newState: WhatsAppFlowState.ConsultarStock,
+            };
+          case ChatbotIntention.ConsultarHorario:
+            return {
+              response: await this.getHorariosMessage(),
+              newState: WhatsAppFlowState.MenuPrincipal,
+            };
+          case ChatbotIntention.ConsultarAsistencia:
+            return {
+              response: "Asistencia - Por favor, ingresa el nombre del empleado para consultar su asistencia\n\nEscribe 0 para volver al menu",
+              newState: WhatsAppFlowState.ConsultarAsistencia,
+            };
+          default:
+            return {
+              response: this.getMenuMessage(),
+              newState: WhatsAppFlowState.MenuPrincipal,
+            };
+        }
     }
-
-    return this.getMenuMessage() + `\nSTATE:${WhatsAppFlowState.MenuPrincipal}`;
   }
 
   private async getHorariosMessage(): Promise<string> {
@@ -154,7 +173,48 @@ export class ChatbotService {
     return lines.join("\n");
   }
 
+  private async getStockMessage(): Promise<string> {
+    const inventory = await this.inventoryRepository
+      .createQueryBuilder("inv")
+      .innerJoinAndSelect("inv.supply", "supply")
+      .innerJoinAndSelect("inv.branch", "branch")
+      .where("inv.current_quantity > 0")
+      .andWhere("inv.deleted_at IS NULL")
+      .andWhere("supply.deleted_at IS NULL")
+      .orderBy("supply.name", "ASC")
+      .getMany();
+
+    if (inventory.length === 0) {
+      return "Stock - No hay productos en inventario.";
+    }
+
+    const lines = ["📦 *Stock de Productos*\n"];
+    
+    const grouped = inventory.reduce((acc, inv) => {
+      const name = inv.supply.name;
+      if (!acc[name]) {
+        acc[name] = [];
+      }
+      acc[name].push(inv);
+      return acc;
+    }, {} as Record<string, typeof inventory>);
+
+    for (const [supplyName, items] of Object.entries(grouped)) {
+      lines.push(`\n*${supplyName}*`);
+      for (const inv of items) {
+        lines.push(`  - ${inv.branch.name}: ${inv.current_quantity} unidades`);
+      }
+    }
+
+    lines.push("\n\nEscribe 0 para volver al menu");
+    return lines.join("\n");
+  }
+
   private async handleStockConsultation(message: string, session: WhatsAppSession): Promise<string> {
+    if (message === "0") {
+      return this.getMenuMessage();
+    }
+
     const supplies = await this.supplyRepository.find({
       where: { deleted_at: IsNull() },
       relations: ["inventories", "inventories.branch"],
@@ -191,6 +251,10 @@ export class ChatbotService {
   }
 
   private async handleAttendanceConsultation(message: string, session: WhatsAppSession): Promise<string> {
+    if (message === "0") {
+      return this.getMenuMessage();
+    }
+
     const employees = await this.employeeRepository.find({
       where: { deleted_at: IsNull(), active: true },
       relations: ["branch"],
@@ -217,7 +281,10 @@ export class ChatbotService {
     const thisMonthAttendances = await this.attendanceRepository
       .createQueryBuilder("attendance")
       .where("attendance.employee_id = :employeeId", { employeeId: employee.id })
-      .andWhere("attendance.register_date LIKE :month", { month: `${today.slice(0, 7)}%` })
+      .andWhere("attendance.register_date >= :startDate AND attendance.register_date < :endDate", {
+        startDate: `${today.slice(0, 7)}-01`,
+        endDate: `${today.slice(0, 7)}-31`,
+      })
       .getMany();
 
     const punctualCount = thisMonthAttendances.filter(a => a.check_in_status === "punctual").length;

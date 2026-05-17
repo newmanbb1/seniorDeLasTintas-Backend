@@ -25,16 +25,15 @@ export class BranchService {
     private readonly configService: ConfigService,
   ) {}
 
-  /** Until auth provides a user id, use env or a fixed UUID for audit columns. */
-  private auditUserId(): string {
+  private getAuditUserId(userId?: string): string {
+    if (userId) return userId;
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
     );
   }
 
-  async create(dto: CreateBranchDto): Promise<Branch> {
-  
+  async create(dto: CreateBranchDto, userId?: string): Promise<Branch> {
     const existname = await this.branchRepository.findOne({
       where: { name:dto.name, deleted_at: IsNull() },
     });
@@ -45,7 +44,7 @@ export class BranchService {
     }
     const branch = this.branchRepository.create({
       ...dto,
-      created_by: this.auditUserId(),
+      created_by: this.getAuditUserId(userId),
     });
     return this.branchRepository.save(branch);
   }
@@ -80,7 +79,7 @@ export class BranchService {
     return branch;
   }
 
-  async update(id: string, dto: UpdateBranchDto): Promise<Branch> {
+  async update(id: string, dto: UpdateBranchDto, userId?: string): Promise<Branch> {
     const branch = await this.findOne(id);
 
     if (dto.name && dto.name !== branch.name) {
@@ -95,11 +94,11 @@ export class BranchService {
     }
 
     Object.assign(branch, dto);
-    branch.updated_by = this.auditUserId();
+    branch.updated_by = this.getAuditUserId(userId);
     return this.branchRepository.save(branch);
   }
 
-  async remove(id: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
     const branch = await this.findOne(id);
 
     const employeesCount = await this.employeeRepository.count({
@@ -121,6 +120,8 @@ export class BranchService {
     }
 
     await this.branchRepository.softDelete({ id });
+    branch.deleted_by = this.getAuditUserId(userId);
+    await this.branchRepository.save(branch);
     return { id, deleted: true };
   }
 }

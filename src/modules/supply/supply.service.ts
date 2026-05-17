@@ -25,14 +25,15 @@ export class SupplyService {
     private readonly configService: ConfigService,
   ) {}
 
-  private auditUserId(): string {
+  private getAuditUserId(userId?: string): string {
+    if (userId) return userId;
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
     );
   }
 
-  async create(dto: CreateSupplyDto): Promise<Supply> {
+  async create(dto: CreateSupplyDto, userId?: string): Promise<Supply> {
     const { name } = dto;
 
     const existingSupply = await this.supplyRepository.findOne({
@@ -46,7 +47,7 @@ export class SupplyService {
 
     const supply = this.supplyRepository.create({
       ...dto,
-      created_by: this.auditUserId(),
+      created_by: this.getAuditUserId(userId),
     });
     return this.supplyRepository.save(supply);
   }
@@ -85,7 +86,7 @@ export class SupplyService {
     return supply;
   }
 
-  async update(id: string, dto: UpdateSupplyDto): Promise<Supply> {
+  async update(id: string, dto: UpdateSupplyDto, userId?: string): Promise<Supply> {
     const supply = await this.findOne(id);
 
     if (dto.name && dto.name !== supply.name) {
@@ -100,11 +101,11 @@ export class SupplyService {
     }
 
     Object.assign(supply, dto);
-    supply.updated_by = this.auditUserId();
+    supply.updated_by = this.getAuditUserId(userId);
     return this.supplyRepository.save(supply);
   }
 
-  async remove(id: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
     const supply = await this.findOne(id);
 
     const inventoryCount = await this.inventoryRepository.count({
@@ -126,6 +127,8 @@ export class SupplyService {
     }
 
     await this.supplyRepository.softDelete({ id });
+    supply.deleted_by = this.getAuditUserId(userId);
+    await this.supplyRepository.save(supply);
     return { id, deleted: true };
   }
 }

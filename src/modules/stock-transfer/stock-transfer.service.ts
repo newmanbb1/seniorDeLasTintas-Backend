@@ -29,14 +29,15 @@ export class StockTransferService {
     private readonly configService: ConfigService,
   ) {}
 
-  private auditUserId(): string {
+  private getAuditUserId(userId?: string): string {
+    if (userId) return userId;
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
     );
   }
 
-  async create(dto: CreateStockTransferDto): Promise<StockTransfer> {
+  async create(dto: CreateStockTransferDto, userId?: string): Promise<StockTransfer> {
     const { origin_branch_id, destination_branch_id, supply_id, quantity } = dto;
 
     if (origin_branch_id === destination_branch_id) {
@@ -90,7 +91,7 @@ export class StockTransferService {
     const stockTransfer = this.stockTransferRepository.create({
       ...dto,
       status: StockTransferStatus.InTransit,
-      created_by: this.auditUserId(),
+      created_by: this.getAuditUserId(userId),
     });
     return this.stockTransferRepository.save(stockTransfer);
   }
@@ -144,7 +145,7 @@ export class StockTransferService {
     return stockTransfer;
   }
 
-  async update(id: string, dto: UpdateStockTransferDto): Promise<StockTransfer> {
+  async update(id: string, dto: UpdateStockTransferDto, userId?: string): Promise<StockTransfer> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status !== StockTransferStatus.InTransit) {
@@ -154,11 +155,11 @@ export class StockTransferService {
     }
 
     Object.assign(stockTransfer, dto);
-    stockTransfer.updated_by = this.auditUserId();
+    stockTransfer.updated_by = this.getAuditUserId(userId);
     return this.stockTransferRepository.save(stockTransfer);
   }
 
-  async receive(id: string): Promise<StockTransfer> {
+  async receive(id: string, userId?: string): Promise<StockTransfer> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status !== StockTransferStatus.InTransit) {
@@ -176,7 +177,7 @@ export class StockTransferService {
 
     if (destinationInventory) {
       destinationInventory.current_quantity += stockTransfer.quantity;
-      destinationInventory.updated_by = this.auditUserId();
+      destinationInventory.updated_by = this.getAuditUserId(userId);
       await this.inventoryRepository.save(destinationInventory);
     } else {
       const newInventory = this.inventoryRepository.create({
@@ -184,7 +185,7 @@ export class StockTransferService {
         supply: stockTransfer.supply,
         current_quantity: stockTransfer.quantity,
         minimum_stock: 0,
-        created_by: this.auditUserId(),
+        created_by: this.getAuditUserId(userId),
       });
       await this.inventoryRepository.save(newInventory);
     }
@@ -197,17 +198,17 @@ export class StockTransferService {
     });
     if (originInventory) {
       originInventory.current_quantity -= stockTransfer.quantity;
-      originInventory.updated_by = this.auditUserId();
+      originInventory.updated_by = this.getAuditUserId(userId);
       await this.inventoryRepository.save(originInventory);
     }
 
     stockTransfer.status = StockTransferStatus.Received;
     stockTransfer.reception_date = new Date();
-    stockTransfer.updated_by = this.auditUserId();
+    stockTransfer.updated_by = this.getAuditUserId(userId);
     return this.stockTransferRepository.save(stockTransfer);
   }
 
-  async reject(id: string): Promise<StockTransfer> {
+  async reject(id: string, userId?: string): Promise<StockTransfer> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status !== StockTransferStatus.InTransit) {
@@ -217,11 +218,11 @@ export class StockTransferService {
     }
 
     stockTransfer.status = StockTransferStatus.Rejected;
-    stockTransfer.updated_by = this.auditUserId();
+    stockTransfer.updated_by = this.getAuditUserId(userId);
     return this.stockTransferRepository.save(stockTransfer);
   }
 
-  async remove(id: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status === StockTransferStatus.InTransit) {
@@ -231,6 +232,8 @@ export class StockTransferService {
     }
 
     await this.stockTransferRepository.softDelete({ id });
+    stockTransfer.deleted_by = this.getAuditUserId(userId);
+    await this.stockTransferRepository.save(stockTransfer);
     return { id, deleted: true };
   }
 }
