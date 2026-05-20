@@ -1,8 +1,10 @@
 import { BaseEntity } from "src/common/entities/BaseEntity";
-import { Column, Entity, Index, Unique } from "typeorm";
+import { Branch } from "src/modules/branch/entities/branch.entity";
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from "typeorm";
 
 export enum UserRole {
   ADMIN = 'admin',
+  SECRETARIA = 'secretaria',
 }
 
 @Entity("user")
@@ -23,4 +25,15 @@ export class User extends BaseEntity {
 
   @Column({ type: "boolean", default: true })
   active: boolean;
+
+  @ManyToOne(() => Branch, (branch) => branch.id, {
+    onDelete: "RESTRICT",
+    nullable: true,
+  })
+  @JoinColumn({ name: "branch_id" })
+  @Index()
+  branch: Branch;
+
+  @Column({ type: "uuid", nullable: true })
+  branch_id: string;
 }

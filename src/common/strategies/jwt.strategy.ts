@@ -9,6 +9,7 @@ export interface JwtPayload {
   role: string;
   type: 'access' | 'employee';
   employee_id?: string;
+  branch_id?: string;
 }
 
 @Injectable()
@@ -28,6 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       role: payload.role,
       type: payload.type,
       employee_id: payload.employee_id,
+      branch_id: payload.branch_id,
     };
   }
 }

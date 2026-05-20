@@ -4,6 +4,19 @@ export const seedAdmin = {
   full_name: 'Administrador Principal',
 };
 
+export const seedSecretarias = [
+  {
+    email: 'secretaria.centro@senordelastintas.com',
+    password: 'secretaria123',
+    full_name: 'Laura Rodríguez',
+  },
+  {
+    email: 'secretaria.norte@senordelastintas.com',
+    password: 'secretaria123',
+    full_name: 'Roberto Díaz',
+  },
+];
+
 export const seedBranches = [
   {
     name: 'Sucursal Centro',

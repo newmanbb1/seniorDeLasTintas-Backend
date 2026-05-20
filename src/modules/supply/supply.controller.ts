@@ -52,7 +52,7 @@ export class SupplyController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "List supplies with pagination and filters" })
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {
@@ -60,7 +60,7 @@ export class SupplyController {
   }
 
   @Get(":id")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get supply by id" })
   @ApiOkWrapped()
   async findOne(@Param("id", ParseUUIDPipe) id: string) {

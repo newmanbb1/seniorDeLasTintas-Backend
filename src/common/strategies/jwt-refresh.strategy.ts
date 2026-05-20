@@ -10,6 +10,7 @@ export interface JwtRefreshPayload {
   email: string;
   role: string;
   type: 'refresh';
+  branch_id?: string;
 }
 
 @Injectable()
@@ -31,6 +32,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       email: payload.email,
       role: payload.role,
       type: payload.type,
+      branch_id: payload.branch_id,
     };
   }
 }

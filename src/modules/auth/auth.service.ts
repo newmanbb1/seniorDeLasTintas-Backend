@@ -14,6 +14,7 @@ import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { RegisterAdminDto } from './dto/register-admin.dto';
+import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { LoginPinDto } from './dto/login-pin.dto';
 import { JwtPayload, JwtRefreshPayload } from '../../common/strategies/jwt-refresh.strategy';
@@ -55,6 +56,30 @@ export class AuthService {
       password: hashedPassword,
       full_name: dto.full_name,
       role: UserRole.ADMIN,
+      active: true,
+      created_by: dto.email,
+    });
+    await this.userRepository.save(user);
+
+    return this.generateTokens(user);
+  }
+
+  async registerSecretaria(dto: RegisterSecretariaDto): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+    const existingUser = await this.userRepository.findOne({
+      where: { email: dto.email, deleted_at: IsNull() },
+    });
+    if (existingUser) {
+      throw new BadRequestException('El email ya está registrado');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+    const user = this.userRepository.create({
+      email: dto.email,
+      password: hashedPassword,
+      full_name: dto.full_name,
+      role: UserRole.SECRETARIA,
+      branch_id: dto.branch_id,
       active: true,
       created_by: dto.email,
     });
@@ -172,6 +197,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       type: 'access',
+      branch_id: user.branch_id || undefined,
     };
 
     const refreshPayload: JwtRefreshPayload = {
@@ -179,6 +205,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       type: 'refresh',
+      branch_id: user.branch_id || undefined,
     };
 
     const access_token = this.jwtService.sign(payload);
@@ -207,5 +234,47 @@ export class AuthService {
 
   private async revokeToken(tokenId: string): Promise<void> {
     await this.refreshTokenRepository.update(tokenId, { revoked: true });
+  }
+
+  async findAllSecretarias(
+    limit: number = 10,
+    offset: number = 0,
+    branch_id?: string,
+    active?: boolean,
+  ): Promise<{ data: User[]; meta: { total: number; limit: number; offset: number } }> {
+    const where: any = { 
+      role: UserRole.SECRETARIA,
+      deleted_at: IsNull(),
+    };
+
+    if (branch_id) {
+      where.branch_id = branch_id;
+    }
+    if (active !== undefined) {
+      where.active = active;
+    }
+
+    const [data, total] = await this.userRepository.findAndCount({
+      where,
+      relations: ['branch'],
+      select: {
+        id: true,
+        email: true,
+        full_name: true,
+        role: true,
+        active: true,
+        branch_id: true,
+        created_at: true,
+        branch: {
+          id: true,
+          name: true,
+        },
+      },
+      take: limit,
+      skip: offset,
+      order: { created_at: 'DESC' },
+    });
+
+    return { data, meta: { total, limit, offset } };
   }
 }

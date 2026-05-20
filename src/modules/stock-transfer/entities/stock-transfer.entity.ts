@@ -16,7 +16,11 @@ export enum StockTransferStatus {
 }
 
 @Entity("stock_transfer")
+@Index("idx_stock_transfer_idempotency_key", ["idempotency_key"], { unique: true })
 export class StockTransfer extends BaseEntity {
+  @Column({ type: "varchar", length: 255, nullable: true, unique: true })
+  idempotency_key: string | null;
+
   @ManyToOne(() => Branch, (branch) => branch.outgoing_transfers, {
     onDelete: "RESTRICT",
   })

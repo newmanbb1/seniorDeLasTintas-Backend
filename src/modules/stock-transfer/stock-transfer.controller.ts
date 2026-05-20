@@ -43,28 +43,43 @@ export class StockTransferController {
   constructor(private readonly stockTransferService: StockTransferService) {}
 
   @Post()
-  @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Create stock transfer (Admin only)" })
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
+  @ApiOperation({ summary: "Create stock transfer" })
   @ApiBody({ type: CreateStockTransferDto })
   @ApiCreatedWrapped()
-  async create(@Body() createStockTransferDto: CreateStockTransferDto, @GetUser('id') userId: string) {
-    return ok(await this.stockTransferService.create(createStockTransferDto, userId));
+  async create(@Body() createStockTransferDto: CreateStockTransferDto, @GetUser('id') userId: string, @GetUser() user: any) {
+    const userContext = user ? {
+      userId: user.sub || user.id,
+      role: user.role,
+      branch_id: user.branch_id,
+    } : undefined;
+    return ok(await this.stockTransferService.create(createStockTransferDto, userId, userContext));
   }
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "List stock transfers with pagination and filters" })
   @ApiOkWrapped()
-  async findAll(@Query() filters: FilterStockTransfer) {
-    return ok(await this.stockTransferService.findAll(filters));
+  async findAll(@Query() filters: FilterStockTransfer, @GetUser() user: any) {
+    const userContext = user ? {
+      userId: user.sub || user.id,
+      role: user.role,
+      branch_id: user.branch_id,
+    } : undefined;
+    return ok(await this.stockTransferService.findAll(filters, userContext));
   }
 
   @Get(":id")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get stock transfer by id" })
   @ApiOkWrapped()
-  async findOne(@Param("id", ParseUUIDPipe) id: string) {
-    return ok(await this.stockTransferService.findOne(id));
+  async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = user ? {
+      userId: user.sub || user.id,
+      role: user.role,
+      branch_id: user.branch_id,
+    } : undefined;
+    return ok(await this.stockTransferService.findOne(id, userContext));
   }
 
   @Patch(":id")

@@ -24,7 +24,7 @@ import {
   ApiOkWrapped,
   ok,
 } from "src/common/response";
-import { EmployeeService } from "./employee.service";
+import { EmployeeService, UserContext } from "./employee.service";
 import { CreateEmployeeDto } from "./dto/create-employee.dto";
 import { UpdateEmployeeDto } from "./dto/update-employee.dto";
 import { FilterEmployee } from "./dto/filter-employee.dto";
@@ -32,6 +32,15 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, GetUser } from "../../common/decorators";
 import { UserRole } from "../auth/entities/user.entity";
+
+function getUserContext(user: any): UserContext | undefined {
+  if (!user) return undefined;
+  return {
+    userId: user.sub || user.id,
+    role: user.role,
+    branch_id: user.branch_id,
+  };
+}
 
 @ApiTags("employee")
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -43,56 +52,62 @@ export class EmployeeController {
   constructor(private readonly employeeService: EmployeeService) {}
 
   @Post()
-  @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Create employee (Admin only)" })
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
+  @ApiOperation({ summary: "Create employee (Admin o Secretaria)" })
   @ApiBody({ type: CreateEmployeeDto })
   @ApiCreatedWrapped()
-  async create(@Body() createEmployeeDto: CreateEmployeeDto, @GetUser('id') userId: string) {
-    return ok(await this.employeeService.create(createEmployeeDto, userId));
+  async create(@Body() createEmployeeDto: CreateEmployeeDto, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.create(createEmployeeDto, user?.sub, userContext));
   }
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "List employees with pagination and filters" })
   @ApiOkWrapped()
-  async findAll(@Query() filters: FilterEmployee) {
-    return ok(await this.employeeService.findAll(filters));
+  async findAll(@Query() filters: FilterEmployee, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.findAll(filters, userContext));
   }
 
   @Get(":id")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get employee by id" })
   @ApiOkWrapped()
-  async findOne(@Param("id", ParseUUIDPipe) id: string) {
-    return ok(await this.employeeService.findOne(id));
+  async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.findOne(id, userContext));
   }
 
   @Patch(":id")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Update employee" })
   @ApiBody({ type: UpdateEmployeeDto })
   @ApiOkWrapped()
   async update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
-    return ok(await this.employeeService.update(id, updateEmployeeDto, userId));
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.update(id, updateEmployeeDto, user?.sub, userContext));
   }
 
   @Delete(":id")
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Soft-delete employee" })
+  @ApiOperation({ summary: "Soft-delete employee (Admin only)" })
   @ApiOkWrapped()
-  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser('id') userId: string) {
-    return ok(await this.employeeService.remove(id, userId));
+  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.remove(id, user?.sub, userContext));
   }
 
   @Patch(":id/toggle-active")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Toggle employee active status" })
   @ApiOkWrapped()
-  async toggleActive(@Param("id", ParseUUIDPipe) id: string, @GetUser('id') userId: string) {
-    return ok(await this.employeeService.toggleActive(id, userId));
+  async toggleActive(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.employeeService.toggleActive(id, user?.sub, userContext));
   }
 }

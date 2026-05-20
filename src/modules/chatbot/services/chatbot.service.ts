@@ -363,7 +363,10 @@ export class ChatbotService {
 
   private async sendResponse(phoneNumber: string, message: string): Promise<void> {
     try {
+      console.log(`=== Enviando respuesta a ${phoneNumber} ===`);
+      console.log(`Mensaje: ${message.substring(0, 50)}...`);
       await this.evolutionApiService.sendMessage(phoneNumber, message);
+      console.log(`=== Respuesta enviada ===`);
     } catch (error) {
       console.error("Error sending WhatsApp message:", error);
     }

@@ -6,11 +6,13 @@ import {
   HttpStatus,
   Post,
   Query,
+  UseGuards,
 } from "@nestjs/common";
 import {
   ApiBadRequestResponse,
   ApiOperation,
   ApiTags,
+  ApiBearerAuth,
 } from "@nestjs/swagger";
 import {
   ApiErrorResponseDto,
@@ -19,6 +21,10 @@ import {
 } from "src/common/response";
 import { ChatbotService } from "../services/chatbot.service";
 import { FilterChatbotLog } from "../dto/filter-chatbot-log.dto";
+import { JwtAuthGuard } from "src/common/guards/jwt-auth.guard";
+import { RolesGuard } from "src/common/guards/roles.guard";
+import { Roles } from "src/common/decorators";
+import { UserRole } from "src/modules/auth/entities/user.entity";
 
 @ApiTags("chatbot")
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -57,16 +63,26 @@ export class ChatbotController {
       console.log("Evento detectado:", event);
 
       // Manejar diferentes eventos de Evolution API
-      if (event === "messages.upsert" || event === "message") {
+      if (event === "messages.upsert" || event === "message" || event === "messages.update") {
+        console.log("=== Procesando evento de mensaje:", event, "===");
         // La estructura de Evolution API tiene el mensaje en payload.data directamente
         let messageData = payload.data;
-        // Si viene en un array messages, usarlo
+        
+        // Para messages.update, puede venir en data.messages[0]
         if (payload.data?.messages?.[0]) {
           messageData = payload.data.messages[0];
         }
-        console.log("=== Extrayendo messageData para messages.upsert ===");
+        
         console.log("messageData:", JSON.stringify(messageData, null, 2));
-        if (messageData) {
+        
+        if (messageData?.message?.conversation) {
+          console.log("Mensaje de texto:", messageData.message.conversation);
+          await this.processMessageData(messageData);
+        } else if (messageData?.message?.extendedTextMessage?.text) {
+          console.log("Mensaje extendido:", messageData.message.extendedTextMessage.text);
+          await this.processMessageData(messageData);
+        } else if (messageData?.message) {
+          console.log("Otro tipo de mensaje, procesando...");
           await this.processMessageData(messageData);
         }
       } else if (event === "connection") {
@@ -234,7 +250,10 @@ export class ChatbotController {
   }
 
   @Post("test")
-  @ApiOperation({ summary: "Enviar mensaje de prueba" })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Enviar mensaje de prueba (Admin only)" })
   @ApiOkWrapped()
   async sendTestMessage(@Body() body: { phone: string; message: string }) {
     console.log(`Test message - Phone: ${body.phone}, Message: ${body.message}`);

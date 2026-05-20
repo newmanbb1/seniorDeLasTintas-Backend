@@ -52,19 +52,29 @@ export class BranchController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "List branches" })
   @ApiOkWrapped()
-  async findAll(@Query() filters:FilterBranch) {
-    return ok(await this.branchService.findAll(filters));
+  async findAll(@Query() filters:FilterBranch, @GetUser() user: any) {
+    const userContext = user ? {
+      userId: user.sub || user.id,
+      role: user.role,
+      branch_id: user.branch_id,
+    } : undefined;
+    return ok(await this.branchService.findAll(filters, userContext));
   }
 
   @Get(":id")
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get branch by id" })
   @ApiOkWrapped()
-  async findOne(@Param("id", ParseUUIDPipe) id: string) {
-    return ok(await this.branchService.findOne(id));
+  async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = user ? {
+      userId: user.sub || user.id,
+      role: user.role,
+      branch_id: user.branch_id,
+    } : undefined;
+    return ok(await this.branchService.findOne(id, userContext));
   }
 
   @Patch(":id")

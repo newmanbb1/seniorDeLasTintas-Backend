@@ -56,37 +56,23 @@ services:
       QR_CODE_LIMIT: 1
       QR_CODE_ON_CHAT: "true"
       DELETE_TOKEN_ON_DIE: "false"
-      WEBHOOK_GLOBAL_ENABLED: "true"
-      WEBHOOK_GLOBAL_URL: "http://backend:3000/chatbot/webhook"
-      WEBHOOK_GLOBAL_BY_EVENTS: "true"
-      WEBHOOK_EVENTS_ON_QRCODE_UPDATED: "true"
-      WEBHOOK_EVENTS_ON_CONNECTION_UPDATE: "true"
-      WEBHOOK_EVENTS_ON_MESSAGE_RECEIVED: "true"
-      WEBHOOK_EVENTS_ON_MESSAGES_UPSERT: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      # WEBHOOK_GLOBAL_URL: "http://backend:3000/api/chatbot/webhook"
+      # WEBHOOK_GLOBAL_BY_EVENTS: "true"
+      # WEBHOOK_EVENTS_ON_QRCODE_UPDATED: "true"
+      # WEBHOOK_EVENTS_ON_CONNECTION_UPDATE: "true"
+      # WEBHOOK_EVENTS_ON_MESSAGE_RECEIVED: "true"
+      # WEBHOOK_EVENTS_ON_MESSAGES_UPSERT: "true"
       CONFIG_SESSION_PHONE_VERSION: "2.3000.1033893291"
     command: >
       bash -c "
         echo 'Iniciando Evolution API...' &&
-        node dist/main.js &
-        EVOLUTION_PID=$!
-        echo 'Esperando que Evolution API esté listo...'
-        sleep 15
-        echo 'Creando instancia...'
-        curl -s -X POST 'http://localhost:8080/instance/create' \
-          -H 'apikey: fixed-api-key-12345' \
-          -H 'Content-Type: application/json' \
-          -d '{\"instanceName\": \"Señor_de_las_Tintas\", \"qrcode\": true}' || echo 'Instancia ya existe o error'
-        sleep 5
-        echo 'Configurando webhook...'
-        curl -s -X PUT 'http://localhost:8080/instance/Señor_de_las_Tintas' \
-          -H 'apikey: fixed-api-key-12345' \
-          -H 'Content-Type: application/json' \
-          -d '{\"webhookUrl\": \"http://backend:3000/chatbot/webhook\", \"webhookByEvents\": false}' || true
-        echo 'Listo!'
-        wait $EVOLUTION_PID
+        node dist/main.js
       "
     networks:
       - app_network
+    volumes:
+      - ./uploads:/app/uploads
 
   # Base de datos para el Negocio (Branch, Employee, Inventory, etc.)
   backend-db:

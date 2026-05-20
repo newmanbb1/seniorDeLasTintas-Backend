@@ -508,6 +508,93 @@ fetch('/branch', {
 
 ---
 
+## 🛡️ Medidas de Seguridad
+
+El backend implementa las siguientes medidas de seguridad para proteger la aplicación:
+
+### Rate Limiting (Límite de Peticiones)
+
+| Nivel | Límite | Ventana |
+|-------|--------|---------|
+| `short` | 10 req | 1 segundo |
+| `medium` | 50 req | 10 segundos |
+| `long` | 100 req | 1 minuto |
+
+Si superas el límite, recibirás error `429 Too Many Requests`.
+
+### Headers de Seguridad (Helmet)
+
+- Content-Security-Policy (CSP)
+- X-Frame-Options: DENY
+- X-Content-Type-Options: nosniff
+- Strict-Transport-Security (HSTS)
+
+### CORS Configurado
+
+Orígenes permitidos configurables mediante variable `CORS_ORIGIN`:
+```env
+CORS_ORIGIN=http://localhost:3001,http://localhost:5173
+```
+
+### Swagger en Producción
+
+La documentación Swagger (`/docs`) solo está disponible en entorno de desarrollo (`NODE_ENV !== 'production'`).
+
+---
+
+## ⚡ Idempotencia en Transferencias
+
+El endpoint `/api/inventory/transfer` implementa protección contra duplicados accidentales.
+
+### Cómo funciona
+
+El servidor genera automáticamente un `idempotency_key` basado en los parámetros de la transferencia:
+
+```
+SHA256(origin_branch_id:destination_branch_id:supply_id:quantity)
+```
+
+### Respuestas
+
+**Primera ejecución (normal):**
+```json
+{
+  "success": true,
+  "data": {
+    "transfer_id": "uuid-generado",
+    "idempotency_key": "a1b2c3d4e5f6...",
+    "idempotency_replayed": false,
+    "supply_name": "Tinta Canon",
+    "origin_branch": "Sucursal A",
+    "destination_branch": "Sucursal B",
+    "quantity": 10,
+    "previous_origin_quantity": 50,
+    "new_origin_quantity": 40,
+    "previous_destination_quantity": 20,
+    "new_destination_quantity": 30
+  }
+}
+```
+
+**Reintento con mismos datos (bloqueado):**
+```json
+{
+  "success": true,
+  "data": {
+    "transfer_id": "uuid-generado",
+    "idempotency_key": "a1b2c3d4e5f6...",
+    "idempotency_replayed": true,
+    "message": "Transferencia ya ejecutada previamente"
+  }
+}
+```
+
+### Para el Frontend
+
+Si tu aplicación hace reintentos automáticos por errores de red, el backend detectará si la transferencia ya fue procesada y retornará el resultado anterior en lugar de ejecutarla de nuevo.
+
+---
+
 ## 📡 Endpoints de la API
 
 ### Base URL
@@ -522,16 +609,31 @@ http://localhost:3000/docs
 
 ---
 
+> ⚠️ **IMPORTANTE**: Todos los endpoints tienen el prefiio `/api`
+> 
+> Ejemplo: `http://localhost:3000/api/auth/login`
+> 
+> **Rutas base:**
+> - Desarrollo: `http://localhost:3000/api`
+> - Producción: `http://tu-dominio.com/api`
+
+---
+
+## 📡 Endpoints API
+
+Todos los endpoints requieren el prefijo `/api`
+
 ### 1. Auth (Autenticación)
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/auth/register` | Registrar primer admin | ❌ Público |
-| POST | `/auth/login` | Login admin (email + password) | ❌ Público |
-| POST | `/auth/login-pin` | Login empleado (solo PIN) | ❌ Público |
-| POST | `/auth/refresh` | Renovar access token | ❌ Público |
-| POST | `/auth/logout` | Cerrar sesión | ✅ JWT |
-| GET | `/auth/profile` | Perfil del usuario actual | ✅ JWT |
+| POST | `/api/auth/register` | Registrar primer admin | ❌ Público |
+| POST | `/api/auth/login` | Login admin (email + password) | ❌ Público |
+| POST | `/api/auth/login-pin` | Login empleado (solo PIN) | ❌ Público |
+| POST | `/api/auth/refresh` | Renovar access token | ❌ Público |
+| POST | `/api/auth/logout` | Cerrar sesión | ✅ JWT |
+| POST | `/api/auth/register-secretaria` | Crear secretaria (solo admin) | ✅ JWT |
+| GET | `/api/auth/profile` | Perfil del usuario actual | ✅ JWT |
 
 **Body login admin:**
 ```json
@@ -561,9 +663,9 @@ http://localhost:3000/docs
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| GET | `/seed/status` | Verificar estado de la BD | ❌ Público |
-| POST | `/seed/all` | Ejecutar seed (inserta datos) | ❌ Público |
-| POST | `/seed/reset` | Limpiar datos y reinstallar | ❌ Público |
+| GET | `/api/seed/status` | Verificar estado de la BD | ❌ Público |
+| POST | `/api/seed` | Ejecutar seed (inserta datos) | ❌ Público |
+| POST | `/api/seed/reset` | Limpiar datos y reinstallar | ❌ Público |
 
 ---
 
@@ -571,11 +673,11 @@ http://localhost:3000/docs
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/branch` | Crear sucursal | ✅ Admin |
-| GET | `/branch?limit=10&offset=0&name=&address=` | Listar con filtros | ✅ Admin |
-| GET | `/branch/:id` | Obtener por ID | ✅ Admin |
-| PATCH | `/branch/:id` | Actualizar sucursal | ✅ Admin |
-| DELETE | `/branch/:id` | Eliminar (soft delete) | ✅ Admin |
+| POST | `/api/branch` | Crear sucursal | ✅ Admin |
+| GET | `/api/branch?limit=10&offset=0&name=&address=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/branch/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| PATCH | `/api/branch/:id` | Actualizar sucursal | ✅ Admin |
+| DELETE | `/api/branch/:id` | Eliminar (soft delete) | ✅ Admin |
 
 ---
 
@@ -583,24 +685,24 @@ http://localhost:3000/docs
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/employee` | Crear empleado | ✅ Admin |
-| GET | `/employee?limit=10&offset=0&full_name=&position=&branch_id=&active=` | Listar con filtros | ✅ Admin |
-| GET | `/employee/:id` | Obtener por ID | ✅ Admin |
-| PATCH | `/employee/:id` | Actualizar empleado | ✅ Admin |
-| PATCH | `/employee/:id/toggle-active` | Activar/Desactivar | ✅ Admin |
-| DELETE | `/employee/:id` | Eliminar (soft delete) | ✅ Admin |
+| POST | `/api/employee` | Crear empleado | ✅ Admin/Secretaria |
+| GET | `/api/employee?limit=10&offset=0&full_name=&position=&branch_id=&active=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/employee/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| PATCH | `/api/employee/:id` | Actualizar empleado | ✅ Admin/Secretaria |
+| PATCH | `/api/employee/:id/toggle-active` | Activar/Desactivar | ✅ Admin/Secretaria |
+| DELETE | `/api/employee/:id` | Eliminar (soft delete) | ✅ Admin |
 
 ---
 
-### 5. Supply (Insumos)
+### 5. Supply (Insumos - Catálogo Central)
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/supply` | Crear insumo | ✅ Admin |
-| GET | `/supply?limit=10&offset=0&name=&category=` | Listar con filtros | ✅ Admin |
-| GET | `/supply/:id` | Obtener por ID | ✅ Admin |
-| PATCH | `/supply/:id` | Actualizar insumo | ✅ Admin |
-| DELETE | `/supply/:id` | Eliminar (soft delete) | ✅ Admin |
+| POST | `/api/supply` | Crear insumo | ✅ Admin |
+| GET | `/api/supply?limit=10&offset=0&name=&category=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/supply/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| PATCH | `/api/supply/:id` | Actualizar insumo | ✅ Admin |
+| DELETE | `/api/supply/:id` | Eliminar (soft delete) | ✅ Admin |
 
 ---
 
@@ -608,26 +710,27 @@ http://localhost:3000/docs
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/inventory` | Crear registro de inventario | ✅ Admin |
-| GET | `/inventory?limit=10&offset=0&branch_id=&supply_id=&low_stock=` | Listar con filtros | ✅ Admin |
-| GET | `/inventory/:id` | Obtener por ID | ✅ Admin |
-| PATCH | `/inventory/:id` | Actualizar inventario | ✅ Admin |
-| PATCH | `/inventory/:id/adjust` | Ajustar cantidad (±) | ✅ Admin |
-| DELETE | `/inventory/:id` | Eliminar (soft delete) | ✅ Admin |
+| POST | `/api/inventory` | Crear registro de inventario | ✅ Admin/Secretaria |
+| GET | `/api/inventory?limit=10&offset=0&branch_id=&supply_id=&low_stock=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/inventory/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| PATCH | `/api/inventory/:id` | Actualizar inventario | ✅ Admin/Secretaria |
+| PATCH | `/api/inventory/:id/adjust` | Ajustar cantidad (±) | ✅ Admin/Secretaria |
+| POST | `/api/inventory/transfer` | **TRASPASO 1 PAGO (ATÓMICO)** | ✅ Admin/Secretaria |
+| DELETE | `/api/inventory/:id` | Eliminar (soft delete) | ✅ Admin |
 
 ---
 
-### 7. StockTransfer (Traspasos)
+### 7. StockTransfer (Traspasos - 2 Pasos)
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/stock-transfer` | Crear traspaso | ✅ Admin |
-| GET | `/stock-transfer?limit=10&offset=0&origin_branch_id=&destination_branch_id=&status=` | Listar con filtros | ✅ Admin |
-| GET | `/stock-transfer/:id` | Obtener por ID | ✅ Admin |
-| PATCH | `/stock-transfer/:id` | Actualizar (solo si InTransit) | ✅ Admin |
-| POST | `/stock-transfer/:id/receive` | Confirmar recepción | ✅ Admin |
-| POST | `/stock-transfer/:id/reject` | Rechazar traspaso | ✅ Admin |
-| DELETE | `/stock-transfer/:id` | Eliminar | ✅ Admin |
+| POST | `/api/stock-transfer` | Crear traspaso | ✅ Admin |
+| GET | `/api/stock-transfer?limit=10&offset=0&origin_branch_id=&destination_branch_id=&status=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/stock-transfer/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| PATCH | `/api/stock-transfer/:id` | Actualizar (solo si InTransit) | ✅ Admin |
+| POST | `/api/stock-transfer/:id/receive` | Confirmar recepción | ✅ Admin |
+| POST | `/api/stock-transfer/:id/reject` | Rechazar traspaso | ✅ Admin |
+| DELETE | `/api/stock-transfer/:id` | Eliminar | ✅ Admin |
 
 ---
 
@@ -635,13 +738,13 @@ http://localhost:3000/docs
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/attendance/check-in` | Registrar entrada (PIN) | ❌ Público |
-| POST | `/attendance/check-out` | Registrar salida (PIN) | ❌ Público |
-| GET | `/attendance?limit=10&offset=0&employee_id=&register_date=&check_in_status=&branch_id=` | Listar con filtros | ✅ Admin |
-| GET | `/attendance/:id` | Obtener por ID | ✅ Admin |
-| GET | `/attendance/report/employee/:employee_id?start_date=&end_date=` | Reporte por empleado | ✅ Admin |
-| PATCH | `/attendance/:id` | Actualizar (admin) | ✅ Admin |
-| DELETE | `/attendance/:id` | Eliminar (soft delete) | ✅ Admin |
+| POST | `/api/attendance/check-in` | Registrar entrada (PIN) | ❌ Público |
+| POST | `/api/attendance/check-out` | Registrar salida (PIN) | ❌ Público |
+| GET | `/api/attendance?limit=10&offset=0&employee_id=&register_date=&check_in_status=&branch_id=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/attendance/:id` | Obtener por ID | ✅ Admin/Secretaria |
+| GET | `/api/attendance/report/employee/:employee_id?start_date=&end_date=` | Reporte por empleado | ✅ Admin/Secretaria |
+| PATCH | `/api/attendance/:id` | Actualizar (admin) | ✅ Admin |
+| DELETE | `/api/attendance/:id` | Eliminar (soft delete) | ✅ Admin |
 
 **Body para check-in/check-out:**
 ```json
@@ -653,18 +756,60 @@ http://localhost:3000/docs
 
 ---
 
-### 9. Chatbot (WhatsApp)
+### 9. Uploads (Imágenes y Videos)
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/chatbot/webhook` | Webhook de Evolution API | ❌ Público |
-| POST | `/chatbot/webhook/messages-upsert` | Webhook para mensajes | ❌ Público |
-| POST | `/chatbot/webhook/chats-update` | Webhook para chats | ❌ Público |
-| POST | `/chatbot/webhook/contacts-update` | Webhook para contactos | ❌ Público |
-| POST | `/chatbot/webhook/connection-update` | Webhook para conexión | ❌ Público |
-| POST | `/chatbot/webhook/qrcode-updated` | Webhook para QR | ❌ Público |
-| GET | `/chatbot/logs?limit=10&offset=0&phone_number=&detected_intention=` | Logs de interacción | ❌ Público |
-| POST | `/chatbot/test` | Mensaje de prueba | ❌ Público |
+| POST | `/api/uploads/images` | Subir imagen (max 5MB) | ✅ JWT + Roles (ADMIN, SECRETARIA) |
+| POST | `/api/uploads/videos` | Subir video (max 50MB) | ✅ JWT + Roles (ADMIN, SECRETARIA) |
+| GET | `/api/uploads/images/supplies/:filename` | Ver imagen | ✅ Público |
+| GET | `/api/uploads/videos/supplies/:filename` | Ver video | ✅ Público |
+
+**Formatos permitidos:**
+- Imágenes: jpg, jpeg, png, webp, gif
+- Videos: mp4, webm, mov
+
+**Subir imagen (Headers requeridos):**
+```
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+**Body (form-data):**
+- Key: `file`
+- Value: [Seleccionar archivo]
+
+**Respuesta:**
+```json
+{
+  "success": true,
+  "data": {
+    "filename": "1234567890-abc.jpg",
+    "url": "/uploads/images/supplies/1234567890-abc.jpg",
+    "size": 102400,
+    "mimetype": "image/jpeg"
+  }
+}
+```
+
+**Ver imagen/video (Público - sin auth):**
+```
+GET http://localhost:3000/uploads/images/supplies/1234567890-abc.jpg
+```
+
+---
+
+### 10. Chatbot (WhatsApp)
+
+| Método | Endpoint | Descripción | Auth |
+|--------|----------|-------------|------|
+| POST | `/api/chatbot/webhook` | Webhook de Evolution API | ❌ Público |
+| POST | `/api/chatbot/webhook/messages-upsert` | Webhook para mensajes | ❌ Público |
+| POST | `/api/chatbot/webhook/connection-update` | Webhook para conexión | ❌ Público |
+| GET | `/api/chatbot/logs?limit=10&offset=0&phone_number=&detected_intention=` | Logs de interacción | ❌ Público |
+| POST | `/api/chatbot/test` | Mensaje de prueba | ✅ JWT + ADMIN |
+
+**Nota:** El endpoint `/chatbot/test` requiere token JWT con rol de ADMIN. Esto es para que solo el administrador pueda enviar mensajes de prueba.
 
 ---
 
@@ -965,6 +1110,131 @@ Esto ocurre cuando el número de WhatsApp del usuario es igual al número de la 
 
 ---
 
+## 🎭 Sistema de Roles
+
+El sistema tiene 3 tipos de usuarios con diferentes niveles de acceso:
+
+### Roles Disponibles
+
+| Rol | Descripción | Acceso |
+|-----|-------------|--------|
+| **ADMIN** | Administrador del sistema | Total (todas las sucursales) |
+| **SECRETARIA** | Encargada de sucursal | Solo su sucursal asignada |
+| **EMPLOYEE** | Empleado (solo asistencia) | Solo check-in/check-out con PIN |
+
+### Permisos por Rol
+
+| Módulo | ADMIN | SECRETARIA | EMPLOYEE |
+|--------|-------|------------|----------|
+| **Auth** | ✅ Login/Register/Logout | ✅ Login/Logout | ❌ |
+| **Branch** | ✅ CRUD | ✅ Ver la suya | ❌ |
+| **Supply** | ✅ CRUD | ✅ Ver catálogo | ❌ |
+| **Inventory** | ✅ CRUD | ✅ Su sucursal | ❌ |
+| **Employee** | ✅ CRUD | ✅ Su sucursal | ❌ |
+| **Attendance** | ✅ Todo | ✅ Su sucursal | ✅ Check-in/out |
+| **StockTransfer** | ✅ Todo | ✅ Crear/Ver | ❌ |
+| **Uploads** | ✅ Subir archivos | ✅ Subir archivos | ❌ |
+
+### Cómo funciona SECRETARIA
+
+Las secretarias tienen una **sucursal asignada** (branch_id) en su perfil. JWT incluye este campo:
+
+```json
+{
+  "sub": "uuid-usuario",
+  "email": "secretaria@email.com",
+  "role": "secretaria",
+  "branch_id": "uuid-sucursal-centro"
+}
+```
+
+**Restricciones:**
+- Solo ven/gestionan datos de SU sucursal
+- Los filtros por `branch_id` son ignorados (siempre usan el suyo)
+- No pueden eliminar registros
+- En transferencias: su sucursal debe estar involucrada (origen O destino)
+
+### Cómo crear una SECRETARIA
+
+Solo el ADMIN puede crear secretarias:
+
+```bash
+POST /api/auth/register-secretaria
+Authorization: Bearer <admin_token>
+
+{
+  "email": "secretaria@email.com",
+  "password": "password123",
+  "full_name": "Nombre Secretaria",
+  "branch_id": "uuid-sucursal-asignada"
+}
+```
+
+---
+
+## 🔄 Transferencia de 1 Paso (Transacción Atómica)
+
+### Descripción
+
+El sistema ofrece dos métodos para traspasar stock entre sucursales:
+
+### Método 1: Transferencia de 1 Paso (RECOMENDADO)
+
+```
+POST /api/inventory/transfer
+```
+
+**Características:**
+- 1 solo llamado API
+- Transacción atómica (BEGIN → COMMIT o ROLLBACK)
+- Si falla cualquier paso, TODO se revierte
+- Validaciones previas
+- Historial automático en stock_transfer
+
+**Body:**
+```json
+{
+  "origin_branch_id": "uuid-origen",
+  "destination_branch_id": "uuid-destino",
+  "supply_id": "uuid-insumo",
+  "quantity": 50
+}
+```
+
+**Flujo interno:**
+1. Validar existencia de sucursales e insumo
+2. Validar stock suficiente en origen
+3. BEGIN TRANSACTION
+4. Débito origen (-quantity)
+5. Crédito destino (+quantity o crear si no existe)
+6. Insertar en stock_transfer (historial)
+7. COMMIT (si todo OK) o ROLLBACK (si falla)
+
+**Para SECRETARIAS:**
+- Solo puede transferir si su sucursal está involucrada
+- Origen = su sucursal ✅
+- Destino = su sucursal ✅
+- Ninguna = su sucursal ❌
+
+### Método 2: Transferencia de 2 Pasos (Existente)
+
+```
+POST /api/stock-transfer        → Crear solicitud (status: in_transit)
+POST /api/stock-transfer/:id/receive  → Aprobar (débito + crédito)
+```
+
+**Diferencias:**
+
+| Aspecto | 1 Paso (Nuevo) | 2 Pasos (Existente) |
+|---------|-----------------|----------------------|
+| Pasos | 1 | 2 |
+| Stock origen | Se resta inmediatamente | Se resta al aprobar |
+| Estado | "received" directo | "in_transit" → "received" |
+| Rollback | Automático si falla | Solo si no se aprueba |
+| para SECRETARIAS | ✅ Sí | ❌ No |
+
+---
+
 ## 📱 Guía para el Frontend
 
 ### Autenticación JWT
@@ -984,8 +1254,29 @@ El sistema utiliza JWT (JSON Web Tokens) para la autenticación:
 - `/auth/refresh`
 - `/attendance/check-in`
 - `/attendance/check-out`
-- `/chatbot/*`
+- `/chatbot/webhook` (todos los webhooks)
+- `/chatbot/logs`
 - `/seed/*`
+- `/uploads/images/supplies/*` (ver imágenes)
+- `/uploads/videos/supplies/*` (ver videos)
+
+### Endpoints Protegidos (Requieren JWT + Rol)
+
+| Endpoint | Roles Permitidos |
+|----------|-----------------|
+| `/auth/logout` | ADMIN |
+| `/auth/profile` | ADMIN, SECRETARIA |
+| `/auth/register-secretaria` | ADMIN |
+| `/branch/*` | ADMIN, SECRETARIA |
+| `/employee/*` | ADMIN, SECRETARIA |
+| `/supply/*` | ADMIN, SECRETARIA |
+| `/inventory/*` | ADMIN, SECRETARIA |
+| `/inventory/transfer` | ADMIN, SECRETARIA |
+| `/stock-transfer/*` | ADMIN, SECRETARIA |
+| `/attendance/*` (excepto check-in/out) | ADMIN, SECRETARIA |
+| `/uploads/images` | ADMIN, SECRETARIA |
+| `/uploads/videos` | ADMIN, SECRETARIA |
+| `/chatbot/test` | ADMIN |
 
 ### Endpoints Protegidos (Requieren JWT + Rol Admin)
 

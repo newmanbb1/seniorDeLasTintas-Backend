@@ -11,8 +11,8 @@ export class EvolutionApiService {
 
   constructor(private readonly configService: ConfigService) {
     const evolutionUrl = this.configService.get<string>("EVOLUTION_URL") || "http://evolution:8080";
-    const apiKey = this.configService.get<string>("INSTANCE_API_KEY") || "";
-    this.instanceName = this.configService.get<string>("INSTANCE_NAME") || "default";
+    const apiKey = this.configService.get<string>("EVOLUTION_API_KEY") || "fixed-api-key-12345";
+    this.instanceName = this.configService.get<string>("INSTANCE_NAME") || "senorbot";
 
     this.client = axios.create({
       baseURL: evolutionUrl,

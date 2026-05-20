@@ -1,19 +1,29 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, LessThanOrEqual, Repository } from "typeorm";
+import { createHash } from "crypto";
+import { DataSource, IsNull, LessThanOrEqual, Repository } from "typeorm";
 import { Inventory } from "./entities/inventory.entity";
 import { Branch } from "../branch/entities/branch.entity";
 import { Supply } from "../supply/entities/supply.entity";
-import { StockTransfer } from "../stock-transfer/entities/stock-transfer.entity";
+import { StockTransfer, StockTransferStatus } from "../stock-transfer/entities/stock-transfer.entity";
 import { CreateInventoryDto } from "./dto/create-inventory.dto";
 import { UpdateInventoryDto } from "./dto/update-inventory.dto";
 import { FilterInventory } from "./dto/filter-inventory.dto";
+import { TransferDto } from "./dto/transfer.dto";
+import { UserRole } from "../auth/entities/user.entity";
+
+export interface UserContext {
+  userId: string;
+  role: string;
+  branch_id?: string;
+}
 
 @Injectable()
 export class InventoryService {
@@ -29,6 +39,10 @@ export class InventoryService {
     private readonly configService: ConfigService,
   ) {}
 
+  private getDataSource(): DataSource {
+    return this.inventoryRepository.metadata.connection;
+  }
+
   private getAuditUserId(userId?: string): string {
     if (userId) return userId;
     return (
@@ -37,8 +51,28 @@ export class InventoryService {
     );
   }
 
-  async create(dto: CreateInventoryDto, userId?: string): Promise<Inventory> {
+  private isSecretaria(role: string): boolean {
+    return role === UserRole.SECRETARIA;
+  }
+
+  private generateIdempotencyKey(
+    originBranchId: string,
+    destinationBranchId: string,
+    supplyId: string,
+    quantity: number
+  ): string {
+    const data = `${originBranchId}:${destinationBranchId}:${supplyId}:${quantity}`;
+    return createHash('sha256').update(data).digest('hex');
+  }
+
+  async create(dto: CreateInventoryDto, userId?: string, userContext?: UserContext): Promise<Inventory> {
     const { branch_id, supply_id } = dto;
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      if (branch_id !== userContext.branch_id) {
+        throw new ForbiddenException('Solo puedes crear inventario para tu sucursal');
+      }
+    }
 
     const branch = await this.branchRepository.findOne({
       where: { id: branch_id, deleted_at: IsNull() },
@@ -76,12 +110,15 @@ export class InventoryService {
 
   async findAll(
     filters: FilterInventory,
+    userContext?: UserContext,
   ): Promise<{ data: Inventory[]; meta: { total: number; limit: number; offset: number } }> {
     const { limit = 10, offset = 0, branch_id, supply_id, low_stock } = filters;
 
     const where: any = { deleted_at: IsNull() };
 
-    if (branch_id) {
+    if (userContext && this.isSecretaria(userContext.role)) {
+      where.branch = { id: userContext.branch_id };
+    } else if (branch_id) {
       where.branch = { id: branch_id };
     }
     if (supply_id) {
@@ -102,7 +139,7 @@ export class InventoryService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string): Promise<Inventory> {
+  async findOne(id: string, userContext?: UserContext): Promise<Inventory> {
     const inventory = await this.inventoryRepository.findOne({
       where: { id },
       relations: ["branch", "supply"],
@@ -110,11 +147,25 @@ export class InventoryService {
     if (!inventory) {
       throw new NotFoundException(`Inventario con ID "${id}" no encontrado`);
     }
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      if (inventory.branch.id !== userContext.branch_id) {
+        throw new ForbiddenException('No tienes acceso a este inventario');
+      }
+    }
+
     return inventory;
   }
 
-  async update(id: string, dto: UpdateInventoryDto, userId?: string): Promise<Inventory> {
-    const inventory = await this.findOne(id);
+  async update(id: string, dto: UpdateInventoryDto, userId?: string, userContext?: UserContext): Promise<Inventory> {
+    const inventory = await this.findOne(id, userContext);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      const newBranchId = dto.branch_id || inventory.branch.id;
+      if (newBranchId !== userContext.branch_id) {
+        throw new ForbiddenException('Solo puedes modificar inventario de tu sucursal');
+      }
+    }
 
     if (dto.branch_id && dto.branch_id !== inventory.branch.id) {
       const branch = await this.branchRepository.findOne({
@@ -171,8 +222,12 @@ export class InventoryService {
     return this.inventoryRepository.save(inventory);
   }
 
-  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
-    const inventory = await this.findOne(id);
+  async remove(id: string, userId?: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+    const inventory = await this.findOne(id, userContext);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      throw new ForbiddenException('Las secretarias no pueden eliminar inventarios');
+    }
 
     const transferCount = await this.stockTransferRepository.count({
       where: [
@@ -192,8 +247,15 @@ export class InventoryService {
     return { id, deleted: true };
   }
 
-  async adjustQuantity(id: string, adjustment: number, userId?: string): Promise<Inventory> {
-    const inventory = await this.findOne(id);
+  async adjustQuantity(id: string, adjustment: number, userId?: string, userContext?: UserContext): Promise<Inventory> {
+    const inventory = await this.findOne(id, userContext);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      if (inventory.branch.id !== userContext.branch_id) {
+        throw new ForbiddenException('Solo puedes ajustar inventario de tu sucursal');
+      }
+    }
+
     const newQuantity = inventory.current_quantity + adjustment;
 
     if (newQuantity < 0) {
@@ -205,5 +267,130 @@ export class InventoryService {
     inventory.current_quantity = newQuantity;
     inventory.updated_by = this.getAuditUserId(userId);
     return this.inventoryRepository.save(inventory);
+  }
+
+  async transfer(dto: TransferDto, userId: string, userContext?: UserContext): Promise<any> {
+    const auditUserId = this.getAuditUserId(userId);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      const isInvolved = dto.origin_branch_id === userContext.branch_id || 
+                         dto.destination_branch_id === userContext.branch_id;
+      if (!isInvolved) {
+        throw new ForbiddenException('Tu transferencia debe involucrar tu sucursal');
+      }
+    }
+
+    const idempotencyKey = this.generateIdempotencyKey(
+      dto.origin_branch_id,
+      dto.destination_branch_id,
+      dto.supply_id,
+      dto.quantity
+    );
+
+    const existingTransfer = await this.stockTransferRepository.findOne({
+      where: { idempotency_key: idempotencyKey },
+    });
+    if (existingTransfer) {
+      return {
+        transfer_id: existingTransfer.id,
+        idempotency_key: idempotencyKey,
+        idempotency_replayed: true,
+        message: 'Transferencia ya ejecutada previamente',
+      };
+    }
+
+    const queryRunner = this.getDataSource().createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const originBranch = await queryRunner.query(
+        'SELECT id, name FROM branch WHERE id = $1 AND deleted_at IS NULL',
+        [dto.origin_branch_id]
+      );
+      if (originBranch.length === 0) {
+        throw new NotFoundException(`La sucursal de origen no existe`);
+      }
+
+      const destinationBranch = await queryRunner.query(
+        'SELECT id, name FROM branch WHERE id = $1 AND deleted_at IS NULL',
+        [dto.destination_branch_id]
+      );
+      if (destinationBranch.length === 0) {
+        throw new NotFoundException(`La sucursal de destino no existe`);
+      }
+
+      const supply = await queryRunner.query(
+        'SELECT id, name FROM supply WHERE id = $1 AND deleted_at IS NULL',
+        [dto.supply_id]
+      );
+      if (supply.length === 0) {
+        throw new NotFoundException(`El insumo no existe`);
+      }
+
+      const originInventory = await queryRunner.query(
+        'SELECT id, current_quantity FROM inventory WHERE branch_id = $1 AND supply_id = $2 AND deleted_at IS NULL',
+        [dto.origin_branch_id, dto.supply_id]
+      );
+
+      if (originInventory.length === 0) {
+        throw new BadRequestException(`No existe inventario del insumo "${supply[0].name}" en la sucursal "${originBranch[0].name}"`);
+      }
+
+      if (originInventory[0].current_quantity < dto.quantity) {
+        throw new BadRequestException(`Stock insuficiente. Disponible: ${originInventory[0].current_quantity}, solicitado: ${dto.quantity}`);
+      }
+
+      const previousOriginQuantity = originInventory[0].current_quantity;
+      await queryRunner.query(
+        'UPDATE inventory SET current_quantity = current_quantity - $1, updated_by = $2 WHERE id = $3',
+        [dto.quantity, auditUserId, originInventory[0].id]
+      );
+
+      const destinationInventory = await queryRunner.query(
+        'SELECT id, current_quantity FROM inventory WHERE branch_id = $1 AND supply_id = $2 AND deleted_at IS NULL',
+        [dto.destination_branch_id, dto.supply_id]
+      );
+
+      let previousDestinationQuantity = 0;
+      if (destinationInventory.length > 0) {
+        previousDestinationQuantity = destinationInventory[0].current_quantity;
+        await queryRunner.query(
+          'UPDATE inventory SET current_quantity = current_quantity + $1, updated_by = $2 WHERE id = $3',
+          [dto.quantity, auditUserId, destinationInventory[0].id]
+        );
+      } else {
+        await queryRunner.query(
+          'INSERT INTO inventory (id, branch_id, supply_id, current_quantity, minimum_stock, created_by, updated_by) VALUES (gen_random_uuid(), $1, $2, $3, 0, $4, $4)',
+          [dto.destination_branch_id, dto.supply_id, dto.quantity, auditUserId]
+        );
+      }
+
+      const transferId = crypto.randomUUID();
+      await queryRunner.query(
+        'INSERT INTO stock_transfer (id, idempotency_key, origin_branch_id, destination_branch_id, supply_id, quantity, status, request_date, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)',
+        [transferId, idempotencyKey, dto.origin_branch_id, dto.destination_branch_id, dto.supply_id, dto.quantity, StockTransferStatus.Received, auditUserId]
+      );
+
+      await queryRunner.commitTransaction();
+
+      return {
+        transfer_id: transferId,
+        idempotency_key: idempotencyKey,
+        supply_name: supply[0].name,
+        origin_branch: originBranch[0].name,
+        destination_branch: destinationBranch[0].name,
+        quantity: dto.quantity,
+        previous_origin_quantity: previousOriginQuantity,
+        new_origin_quantity: previousOriginQuantity - dto.quantity,
+        previous_destination_quantity: previousDestinationQuantity,
+        new_destination_quantity: previousDestinationQuantity + dto.quantity,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

@@ -24,7 +24,7 @@ import {
   ApiOkWrapped,
   ok,
 } from "src/common/response";
-import { AttendanceService } from "./attendance.service";
+import { AttendanceService, UserContext } from "./attendance.service";
 import { CreateAttendanceDto } from "./dto/create-attendance.dto";
 import { UpdateAttendanceDto } from "./dto/update-attendance.dto";
 import { FilterAttendance } from "./dto/filter-attendance.dto";
@@ -34,6 +34,15 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles, GetUser } from "../../common/decorators";
 import { UserRole } from "../auth/entities/user.entity";
 import { AllowAnonymous } from "../../common/guards/allow-anon.decorator";
+
+function getUserContext(user: any): UserContext | undefined {
+  if (!user) return undefined;
+  return {
+    userId: user.sub || user.id,
+    role: user.role,
+    branch_id: user.branch_id,
+  };
+}
 
 @ApiTags("attendance")
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -63,36 +72,40 @@ export class AttendanceController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "List attendance records with pagination and filters" })
   @ApiOkWrapped()
-  async findAll(@Query() filters: FilterAttendance) {
-    return ok(await this.attendanceService.findAll(filters));
+  async findAll(@Query() filters: FilterAttendance, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.attendanceService.findAll(filters, userContext));
   }
 
   @Get(":id")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get attendance record by id" })
   @ApiOkWrapped()
-  async findOne(@Param("id", ParseUUIDPipe) id: string) {
-    return ok(await this.attendanceService.findOne(id));
+  async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.attendanceService.findOne(id, userContext));
   }
 
   @Get("report/employee/:employee_id")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: "Get attendance report by employee" })
   @ApiOkWrapped()
   async getReportByEmployee(
+    @GetUser() user: any,
     @Param("employee_id", ParseUUIDPipe) employee_id: string,
     @Query("start_date") startDate?: string,
     @Query("end_date") endDate?: string,
   ) {
+    const userContext = getUserContext(user);
     return ok(
-      await this.attendanceService.getReportByEmployee(employee_id, startDate, endDate),
+      await this.attendanceService.getReportByEmployee(employee_id, startDate, endDate, userContext),
     );
   }
 
@@ -106,9 +119,10 @@ export class AttendanceController {
   async update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() updateAttendanceDto: UpdateAttendanceDto,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
-    return ok(await this.attendanceService.update(id, updateAttendanceDto, userId));
+    const userContext = getUserContext(user);
+    return ok(await this.attendanceService.update(id, updateAttendanceDto, user?.sub, userContext));
   }
 
   @Delete(":id")
@@ -117,7 +131,8 @@ export class AttendanceController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Soft-delete attendance record" })
   @ApiOkWrapped()
-  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser('id') userId: string) {
-    return ok(await this.attendanceService.remove(id, userId));
+  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.attendanceService.remove(id, user?.sub, userContext));
   }
 }

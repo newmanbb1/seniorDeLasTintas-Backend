@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -14,6 +15,13 @@ import { Inventory } from "../inventory/entities/inventory.entity";
 import { CreateStockTransferDto } from "./dto/create-stock-transfer.dto";
 import { UpdateStockTransferDto } from "./dto/update-stock-transfer.dto";
 import { FilterStockTransfer } from "./dto/filter-stock-transfer.dto";
+import { UserRole } from "../auth/entities/user.entity";
+
+export interface UserContext {
+  userId: string;
+  role: string;
+  branch_id?: string;
+}
 
 @Injectable()
 export class StockTransferService {
@@ -37,8 +45,20 @@ export class StockTransferService {
     );
   }
 
-  async create(dto: CreateStockTransferDto, userId?: string): Promise<StockTransfer> {
+  private isSecretaria(role: string): boolean {
+    return role === UserRole.SECRETARIA;
+  }
+
+  async create(dto: CreateStockTransferDto, userId?: string, userContext?: UserContext): Promise<StockTransfer> {
     const { origin_branch_id, destination_branch_id, supply_id, quantity } = dto;
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      const isInvolved = origin_branch_id === userContext.branch_id || 
+                         destination_branch_id === userContext.branch_id;
+      if (!isInvolved) {
+        throw new ForbiddenException('Tu transferencia debe involucrar tu sucursal');
+      }
+    }
 
     if (origin_branch_id === destination_branch_id) {
       throw new BadRequestException(
@@ -98,6 +118,7 @@ export class StockTransferService {
 
   async findAll(
     filters: FilterStockTransfer,
+    userContext?: UserContext,
   ): Promise<{ data: StockTransfer[]; meta: { total: number; limit: number; offset: number } }> {
     const {
       limit = 10,
@@ -110,11 +131,16 @@ export class StockTransferService {
 
     const where: any = { deleted_at: IsNull() };
 
-    if (origin_branch_id) {
-      where.origin_branch = { id: origin_branch_id };
-    }
-    if (destination_branch_id) {
-      where.destination_branch = { id: destination_branch_id };
+    if (userContext && this.isSecretaria(userContext.role) && userContext.branch_id) {
+      where.origin_branch = { id: userContext.branch_id };
+      where.destination_branch = { id: userContext.branch_id };
+    } else {
+      if (origin_branch_id) {
+        where.origin_branch = { id: origin_branch_id };
+      }
+      if (destination_branch_id) {
+        where.destination_branch = { id: destination_branch_id };
+      }
     }
     if (supply_id) {
       where.supply = { id: supply_id };
@@ -134,14 +160,23 @@ export class StockTransferService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string): Promise<StockTransfer> {
+  async findOne(id: string, userContext?: UserContext): Promise<StockTransfer> {
     const stockTransfer = await this.stockTransferRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
       relations: ["origin_branch", "destination_branch", "supply"],
     });
     if (!stockTransfer) {
       throw new NotFoundException(`Traspaso con ID "${id}" no encontrado`);
     }
+
+    if (userContext && this.isSecretaria(userContext.role) && userContext.branch_id) {
+      const isInvolved = stockTransfer.origin_branch.id === userContext.branch_id || 
+                         stockTransfer.destination_branch.id === userContext.branch_id;
+      if (!isInvolved) {
+        throw new ForbiddenException("No tienes acceso a este traspaso");
+      }
+    }
+
     return stockTransfer;
   }
 

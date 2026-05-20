@@ -15,6 +15,13 @@ import { CreateAttendanceDto } from "./dto/create-attendance.dto";
 import { UpdateAttendanceDto } from "./dto/update-attendance.dto";
 import { FilterAttendance } from "./dto/filter-attendance.dto";
 import { CheckOutDto } from "./dto/check-out.dto";
+import { UserRole } from "../auth/entities/user.entity";
+
+export interface UserContext {
+  userId: string;
+  role: string;
+  branch_id?: string;
+}
 
 @Injectable()
 export class AttendanceService {
@@ -60,6 +67,10 @@ export class AttendanceService {
       return AttendanceEntryStatus.Punctual;
     }
     return AttendanceEntryStatus.Late;
+  }
+
+  private isSecretaria(role: string): boolean {
+    return role === UserRole.SECRETARIA;
   }
 
   async checkIn(dto: CreateAttendanceDto): Promise<Attendance> {
@@ -163,6 +174,7 @@ export class AttendanceService {
 
   async findAll(
     filters: FilterAttendance,
+    userContext?: UserContext,
   ): Promise<{ data: Attendance[]; meta: { total: number; limit: number; offset: number } }> {
     const {
       limit = 10,
@@ -175,17 +187,21 @@ export class AttendanceService {
 
     const where: any = { deleted_at: IsNull() };
 
-    if (employee_id) {
-      where.employee = { id: employee_id };
+    if (userContext && this.isSecretaria(userContext.role)) {
+      where.employee = { branch: { id: userContext.branch_id } };
+    } else {
+      if (employee_id) {
+        where.employee = { id: employee_id };
+      }
+      if (branch_id) {
+        where.employee = { ...where.employee, branch: { id: branch_id } };
+      }
     }
     if (register_date) {
       where.register_date = register_date;
     }
     if (check_in_status) {
       where.check_in_status = check_in_status;
-    }
-    if (branch_id) {
-      where.employee = { ...where.employee, branch: { id: branch_id } };
     }
 
     const [data, total] = await this.attendanceRepository.findAndCount({
@@ -199,7 +215,7 @@ export class AttendanceService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string): Promise<Attendance> {
+  async findOne(id: string, userContext?: UserContext): Promise<Attendance> {
     const attendance = await this.attendanceRepository.findOne({
       where: { id },
       relations: ["employee", "employee.branch"],
@@ -207,19 +223,34 @@ export class AttendanceService {
     if (!attendance) {
       throw new NotFoundException(`Asistencia con ID "${id}" no encontrada`);
     }
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      if (attendance.employee.branch.id !== userContext.branch_id) {
+        throw new ForbiddenException('No tienes acceso a esta asistencia');
+      }
+    }
+
     return attendance;
   }
 
-  async update(id: string, dto: UpdateAttendanceDto, userId?: string): Promise<Attendance> {
-    const attendance = await this.findOne(id);
+  async update(id: string, dto: UpdateAttendanceDto, userId?: string, userContext?: UserContext): Promise<Attendance> {
+    const attendance = await this.findOne(id, userContext);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      throw new ForbiddenException('Las secretarias no pueden modificar assistencias');
+    }
 
     Object.assign(attendance, dto);
     attendance.updated_by = this.getAuditUserId(userId);
     return this.attendanceRepository.save(attendance);
   }
 
-  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
-    const attendance = await this.findOne(id);
+  async remove(id: string, userId?: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+    const attendance = await this.findOne(id, userContext);
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      throw new ForbiddenException('Las secretarias no pueden eliminar assistencias');
+    }
 
     await this.attendanceRepository.softDelete({ id });
     attendance.deleted_by = this.getAuditUserId(userId);
@@ -231,6 +262,7 @@ export class AttendanceService {
     employee_id: string,
     startDate?: string,
     endDate?: string,
+    userContext?: UserContext,
   ): Promise<{ data: Attendance[]; summary: any }> {
     const employee = await this.employeeRepository.findOne({
       where: { id: employee_id, deleted_at: IsNull() },
@@ -239,6 +271,12 @@ export class AttendanceService {
 
     if (!employee) {
       throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+    }
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      if (employee.branch.id !== userContext.branch_id) {
+        throw new ForbiddenException('No tienes acceso a los reportes de este empleado');
+      }
     }
 
     const where: any = {

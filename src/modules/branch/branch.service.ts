@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -12,6 +13,13 @@ import { Inventory } from "../inventory/entities/inventory.entity";
 import { CreateBranchDto } from "./dto/create-branch.dto";
 import { UpdateBranchDto } from "./dto/update-branch.dto";
 import { FilterBranch } from "./dto/fiter-branch.dto";
+import { UserRole } from "../auth/entities/user.entity";
+
+export interface UserContext {
+  userId: string;
+  role: UserRole;
+  branch_id?: string;
+}
 
 @Injectable()
 export class BranchService {
@@ -49,10 +57,14 @@ export class BranchService {
     return this.branchRepository.save(branch);
   }
 
-  async findAll(filters: FilterBranch): Promise<{ data: Branch[]; meta: { total: number; limit: number; offset: number } }> {
+  async findAll(filters: FilterBranch, userContext?: UserContext): Promise<{ data: Branch[]; meta: { total: number; limit: number; offset: number } }> {
     const { limit = 10, offset = 0, name, address } = filters;
 
     const where: any = { deleted_at: IsNull() };
+
+    if (userContext && userContext.role === UserRole.SECRETARIA && userContext.branch_id) {
+      where.id = userContext.branch_id;
+    }
 
     if (name) {
       where.name = Like(`%${name}%`);
@@ -71,8 +83,14 @@ export class BranchService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string): Promise<Branch> {
-    const branch = await this.branchRepository.findOne({ where: { id } });
+  async findOne(id: string, userContext?: UserContext): Promise<Branch> {
+    if (userContext && userContext.role === UserRole.SECRETARIA && userContext.branch_id) {
+      if (id !== userContext.branch_id) {
+        throw new ForbiddenException("No tienes acceso a esta sucursal");
+      }
+    }
+
+    const branch = await this.branchRepository.findOne({ where: { id, deleted_at: IsNull() } });
     if (!branch) {
       throw new NotFoundException(`Branch with id "${id}" not found`);
     }

@@ -12,6 +12,7 @@ import { StockTransfer, StockTransferStatus } from '../stock-transfer/entities/s
 import { Attendance, AttendanceEntryStatus } from '../attendance/entities/attendance.entity';
 import {
   seedAdmin,
+  seedSecretarias,
   seedBranches,
   seedSupplies,
   seedEmployees,
@@ -54,9 +55,10 @@ export class SeedService {
   // }
 
   async seedAll(): Promise<{ message: string; data: any }> {
-    const result = {
+    const result: any = {
       admin: false,
       branches: 0,
+      secretarias: 0,
       supplies: 0,
       employees: 0,
       inventories: 0,
@@ -72,6 +74,9 @@ export class SeedService {
 
     const branches = await this.seedBranches(adminId);
     result.branches = branches.length;
+
+    const secretarias = await this.seedSecretarias(adminId, branches);
+    result.secretarias = secretarias.length;
 
     const supplies = await this.seedSupplies(adminId);
     result.supplies = supplies.length;
@@ -155,6 +160,42 @@ export class SeedService {
 
     const saved = await this.userRepository.save(admin);
     return saved.id;
+  }
+
+  private async seedSecretarias(adminId: string, branches: Branch[]): Promise<User[]> {
+    const secretarias: User[] = [];
+
+    for (let i = 0; i < seedSecretarias.length; i++) {
+      const secretariaData = seedSecretarias[i];
+      
+      const existing = await this.userRepository.findOne({
+        where: { email: secretariaData.email, deleted_at: IsNull() },
+      });
+
+      if (existing) {
+        secretarias.push(existing);
+        continue;
+      }
+
+      const hashedPassword = await bcrypt.hash(secretariaData.password, 10);
+      
+      const branch = branches[i] || branches[0];
+      
+      const secretaria = this.userRepository.create({
+        email: secretariaData.email,
+        password: hashedPassword,
+        full_name: secretariaData.full_name,
+        role: UserRole.SECRETARIA,
+        branch_id: branch.id,
+        active: true,
+        created_by: adminId,
+      });
+
+      const saved = await this.userRepository.save(secretaria);
+      secretarias.push(saved);
+    }
+
+    return secretarias;
   }
 
   private async seedBranches(adminId: string): Promise<Branch[]> {
