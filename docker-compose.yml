@@ -108,6 +108,7 @@ services:
       - DB_NAME=backend
       - DB_USERNAME=postgres
       - DB_PASSWORD=${DB_PASSWORD}
+      - DB_SYNC=${DB_SYNC:-false}
       - EVOLUTION_URL=http://evolution:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
       - INSTANCE_API_KEY=${INSTANCE_API_KEY}

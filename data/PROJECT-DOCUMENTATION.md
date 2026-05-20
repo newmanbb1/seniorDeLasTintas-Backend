@@ -96,6 +96,7 @@ src/
 └── modules/
     ├── auth/            → Autenticación JWT + Refresh Tokens
     ├── seed/            → Seed de datos de ejemplo
+    ├── uploads/         → Subir imágenes y videos
     ├── branch/          → Gestión de sucursales
     ├── employee/        → Gestión de empleados
     ├── supply/          → Catálogo de insumos
@@ -634,6 +635,7 @@ Todos los endpoints requieren el prefijo `/api`
 | POST | `/api/auth/logout` | Cerrar sesión | ✅ JWT |
 | POST | `/api/auth/register-secretaria` | Crear secretaria (solo admin) | ✅ JWT |
 | GET | `/api/auth/profile` | Perfil del usuario actual | ✅ JWT |
+| GET | `/api/auth/secretarias` | Listar todas las secretarias (solo admin) | ✅ JWT |
 
 **Body login admin:**
 ```json
@@ -803,9 +805,15 @@ GET http://localhost:3000/uploads/images/supplies/1234567890-abc.jpg
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/api/chatbot/webhook` | Webhook de Evolution API | ❌ Público |
-| POST | `/api/chatbot/webhook/messages-upsert` | Webhook para mensajes | ❌ Público |
-| POST | `/api/chatbot/webhook/connection-update` | Webhook para conexión | ❌ Público |
+| POST | `/api/chatbot/webhook` | Webhook principal de Evolution API | ❌ Público |
+| POST | `/api/chatbot/webhook/messages-upsert` | Webhook para nuevos mensajes | ❌ Público |
+| POST | `/api/chatbot/webhook/messages-update` | Webhook para actualización de mensajes | ❌ Público |
+| POST | `/api/chatbot/webhook/chats-upsert` | Webhook para nuevos chats | ❌ Público |
+| POST | `/api/chatbot/webhook/chats-update` | Webhook para actualización de chats | ❌ Público |
+| POST | `/api/chatbot/webhook/contacts-update` | Webhook para actualización de contactos | ❌ Público |
+| POST | `/api/chatbot/webhook/connection-update` | Webhook para conexión/desconexión | ❌ Público |
+| POST | `/api/chatbot/webhook/qrcode-updated` | Webhook para código QR actualizado | ❌ Público |
+| POST | `/api/chatbot/webhook/presence-update` | Webhook para cambio de presencia | ❌ Público |
 | GET | `/api/chatbot/logs?limit=10&offset=0&phone_number=&detected_intention=` | Logs de interacción | ❌ Público |
 | POST | `/api/chatbot/test` | Mensaje de prueba | ✅ JWT + ADMIN |
 
@@ -1448,6 +1456,449 @@ docker-compose down
 # Ver estado
 docker-compose ps
 ```
+
+---
+
+### 🔧 Despliegue Completo (Desde Cero)
+
+Este es el flujo completo para levantar la aplicación desde cero en producción:
+
+#### 1. Limpiar contenedores y volúmenes anteriores
+
+```bash
+docker compose down -v
+```
+
+#### 2. Construir e iniciar servicios
+
+```bash
+docker compose up -d --build
+```
+
+Este comando:
+- Construye la imagen del backend
+- Crea las redes y volúmenes
+- Inicia todos los contenedores
+- Espera a que las bases de datos estén saludables
+
+#### 3. Ejecutar migraciones
+
+```bash
+docker compose exec backend npm run migration:run
+```
+
+**Importante:** La base de datos se crea vacía (solo estructura). Las migraciones crean las tablas.
+
+#### 4. (Opcional) Insertar datos de prueba
+
+```bash
+curl -X POST http://localhost:3000/api/seed/all
+```
+
+Esto inserta:
+- 1 admin
+- 3 sucursales
+- 10 insumos
+- 5 empleados
+- 30 registros de inventario
+
+#### 5. Verificar que todo funcione
+
+```bash
+# Estado del sistema
+curl http://localhost:3000/api/seed/status
+
+# Login de admin
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@senordelastintas.com","password":"admin123"}'
+```
+
+---
+
+### ⚙️ Configuración DB_SYNC
+
+| Valor | Cuándo usar | Comportamiento |
+|-------|-------------|----------------|
+| `DB_SYNC=true` | **Desarrollo** | Las tablas se crean automáticamente desde las entidades |
+| `DB_SYNC=false` | **Producción** | Las tablas NO se crean automáticamente. Requiere ejecutar `migration:run` |
+
+**En Docker (producción):**
+```yaml
+# docker-compose.yml
+environment:
+  - DB_SYNC=${DB_SYNC:-false}  # Por defecto false
+```
+
+**Para desarrollo con Docker:**
+```bash
+DB_SYNC=true docker compose up -d
+```
+
+---
+
+### 📦 Dockerfile Actualizado
+
+El proyecto incluye un Dockerfile optimizado que copia los archivos necesarios para ejecutar migraciones:
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY dist/ ./dist/
+COPY node_modules/ ./node_modules/
+COPY src/data-source.ts ./src/data-source.ts    # ← Necesario para migraciones
+COPY src/migrations/ ./src/migrations/          # ← Necesario para migraciones
+COPY .env ./                                    # ← Variables de entorno
+COPY uploads/ ./uploads/                        # ← Archivos subidos
+
+EXPOSE 3000
+
+CMD ["node", "dist/main.js"]
+```
+
+**Por qué se necesitan estos archivos:**
+- `src/data-source.ts` - Configuración de TypeORM para CLI
+- `src/migrations/` - Scripts de migración de la base de datos
+- `.env` - Variables de entorno (contraseñas, keys)
+- `uploads/` - Imágenes y videos subidos por usuarios
+
+---
+
+### 🔍 Solución de Problemas
+
+#### Error: "Cannot find module '/app/src/data-source.ts'"
+
+**Causa:** El Dockerfile no copia los archivos necesarios para migraciones.
+
+**Solución:** Verificar que el Dockerfile incluya:
+```dockerfile
+COPY src/data-source.ts ./src/data-source.ts
+COPY src/migrations/ ./src/migrations/
+```
+
+#### La base de datos está vacía (sin tablas)
+
+**Causa:** Se levantó el container sin ejecutar migraciones (`DB_SYNC=false`).
+
+**Solución:**
+```bash
+docker compose exec backend npm run migration:run
+```
+
+#### Error de conexión a Evolution API (EAI_AGAIN)
+
+**Causa:** El backend intenta conectar a `evolution:8080` pero el servicio no está disponible.
+
+**Solución:**
+1. Verificar que Evolution API esté corriendo:
+   ```bash
+   docker compose ps
+   ```
+2. Ver logs:
+   ```bash
+   docker compose logs evolution
+   ```
+
+#### La instancia de WhatsApp está desconectada
+
+**Causa:** La instancia "senorbot" existe pero no está conectada a WhatsApp.
+
+**Solución:**
+1. Acceder al panel de Evolution API: http://localhost:8080/manager
+2. API Key: `fixed-api-key-12345`
+3. Buscar la instancia "senorbot"
+4. Escanear el código QR con WhatsApp
+
+#### Verificar estado de Evolution API
+
+```bash
+curl http://localhost:8080/instance/fetchInstances \
+  -H "apikey: fixed-api-key-12345"
+```
+
+---
+
+## 🗄️ Migraciones de Base de Datos
+
+### Descripción General
+
+El proyecto utiliza **TypeORM Migrations** para gestionar el esquema de la base de datos en lugar de `synchronize`. Esto proporciona:
+
+- ✅ Control/versionado del esquema de DB
+- ✅ Despliegues seguros en producción
+- ✅ Rollback de cambios si es necesario
+- ✅ Historial de cambios en el código
+
+### Configuración
+
+#### Archivos Clave
+
+| Archivo | Propósito |
+|---------|-----------|
+| `src/data-source.ts` | Configuración para CLI de TypeORM |
+| `src/migrations/` | Directorio donde se guardan las migraciones |
+| `.env` | Variable `DB_SYNC` para controlar sincronización |
+
+#### data-source.ts
+
+```typescript
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432'),
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'backend',
+  synchronize: false,          // ⚠️ Siempre false (usa migraciones)
+  migrationsRun: false,        // ⚠️ Siempre false (manual)
+  entities: ['src/modules/**/*.entity.ts'],
+  migrations: ['src/migrations/*.ts'],
+  migrationsTableName: 'migrations',
+});
+```
+
+#### Variables de Entorno
+
+| Variable | Valor | Descripción |
+|----------|-------|-------------|
+| `DB_SYNC` | `true` | Desarrollo (sincronización automática) |
+| `DB_SYNC` | `false` | Producción (requiere migraciones) |
+
+---
+
+### Comandos de Migración
+
+Todos los comandos se ejecutan desde la raíz del proyecto:
+
+#### 1. Generar una nueva migración
+
+```bash
+npm run migration:generate -- src/migrations/<nombre>
+```
+
+**Ejemplos:**
+```bash
+# Crear migración para agregar campo
+npm run migration:generate -- src/migrations/agregar-campo-producto
+
+# Crear migración para nueva tabla
+npm run migration:generate -- src/migrations/crear-tabla-proveedores
+
+# Crear migración para modificar relación
+npm run migration:generate -- src/migrations/modificar-relacion-inventory
+```
+
+**Resultado:**
+- Se genera un archivo en `src/migrations/` con formato: `1779298031234-nombre.ts`
+- TypeORM detecta cambios entre entidades y DB actual
+
+#### 2. Ejecutar todas las migraciones pendientes
+
+```bash
+npm run migration:run
+```
+
+**Efecto:**
+- Ejecuta TODAS las migraciones que NO se han aplicado aún
+- Crea la tabla `migrations` para tracking
+
+#### 3. Revertir la última migración
+
+```bash
+npm run migration:revert
+```
+
+**Efecto:**
+- Deshace solo la última migración aplicada
+- Útil para correcciones rápidas en desarrollo
+
+#### 4. Ver estado de migraciones
+
+```bash
+npm run migration:show
+```
+
+**Muestra:**
+- Lista de migraciones aplicadas
+- Migraciones pendientes
+
+---
+
+### Desarrollo Local (Sin Docker)
+
+#### Flujo Completo
+
+```bash
+# 1. Configurar .env para desarrollo
+DB_SYNC=true           # Sincroniza automáticamente (tablas se crean)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=TintasDB
+DB_USERNAME=postgres
+DB_PASSWORD=Tintas@2024Secure
+
+# 2. Ejecutar la aplicación (sincroniza automáticamente)
+npm run start:dev
+```
+
+#### Cuándo usar migraciones en desarrollo
+
+```bash
+# Cuando realizas cambios en entidades y quieres generar migración
+DB_SYNC=false          # Cambiar a false para probar migraciones
+
+# Generar migración basada en cambios
+npm run migration:generate -- src/migrations/mi-cambio
+
+# Ejecutar migración
+npm run migration:run
+```
+
+---
+
+### Producción (Docker Compose)
+
+#### Flujo de Despliegue
+
+```bash
+# 1. Levantar servicios (crea la BD pero NO las tablas)
+docker compose up -d
+
+# 2. Verificar que el backend esté corriendo
+docker compose ps
+
+# 3. Ejecutar migraciones dentro del container
+docker compose exec backend npm run migration:run
+```
+
+#### Notas Importantes
+
+- **Docker crea la BD**: El servicio `backend-db` en docker-compose.yml crea la base de datos `backend` automáticamente
+- **Las tablas NO se crean automáticamente**: Porque `DB_SYNC=false` por defecto
+- **Migraciones son necesarias**: Después de levantar los containers, ejecutar `migration:run`
+
+#### Variabe DB_SYNC en Docker
+
+En `docker-compose.yml`:
+```yaml
+environment:
+  - DB_SYNC=${DB_SYNC:-false}  # Por defecto false (producción)
+```
+
+Para desarrollo con Docker:
+```bash
+DB_SYNC=true docker compose up -d
+```
+
+---
+
+### Ejemplo Completo: Agregar un Nuevo Campo
+
+#### Paso 1: Modificar la entidad
+
+```typescript
+// src/modules/supply/entities/supply.entity.ts
+@Entity()
+export class Supply extends BaseEntity {
+  // ... campos existentes ...
+
+  @Column({ default: false })
+  is_hazardous: boolean;  // ← Nuevo campo agregado
+}
+```
+
+#### Paso 2: Generar la migración
+
+```bash
+npm run migration:generate -- src/migrations/agregar-campo-is-hazardous
+```
+
+#### Paso 3: Revisar la migración generada
+
+```typescript
+// src/migrations/1779298031234-agregar-campo-is-hazardous.ts
+export class AgregarCampoIsHazardous1779298031234 {
+  name = 'AgregarCampoIsHazardous1779298031234';
+
+  async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`ALTER TABLE "supply" ADD "is_hazardous" boolean DEFAULT false`);
+  }
+
+  async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`ALTER TABLE "supply" DROP COLUMN "is_hazardous"`);
+  }
+}
+```
+
+#### Paso 4: Ejecutar la migración
+
+```bash
+# Desarrollo local
+npm run migration:run
+
+# Producción (Docker)
+docker compose exec backend npm run migration:run
+```
+
+#### Paso 5: Verificar
+
+```bash
+# Ver estado de migraciones
+npm run migration:show
+```
+
+---
+
+### Solución de Problemas
+
+#### "No changes in database schema were found"
+
+**Causa:** Las tablas ya están sincronizadas (quizás con `DB_SYNC=true` antes).
+
+**Solución:**
+1. Verificar qué tablas existen:
+   ```bash
+   psql -U postgres -d TintasDB -c "\dt"
+   ```
+2. Si las tablas ya existen, no necesitas migración
+3. Los cambios futuros sí generarán migraciones
+
+#### Error de conexión a la base de datos
+
+**Verificar:**
+1. Que PostgreSQL esté corriendo
+2. Que las credenciales en `.env` sean correctas
+3. Que la base de datos exista
+
+```bash
+# Listar bases de datos
+psql -U postgres -h localhost -l
+```
+
+#### Migración fallida en producción
+
+1. **No panikear**: La transacción hace rollback automáticamente
+2. **Revisar logs**:
+   ```bash
+   docker compose logs backend
+   ```
+3. **Corregir** el código o la migración
+4. **Reintentar** después de corregir
+
+---
+
+### Mejores Prácticas
+
+1. **Prefijo claro en nombres**: `agregar-campo-`, `crear-tabla-`, `modificar-relacion-`
+2. **Una migración por cambio**: Mantener migraciones pequeñas y específicas
+3. **Probar en desarrollo primero**: Antes de producción, всегда probar locally
+4. **No editar migraciones ya aplicadas**: Si hay error, crear nueva migración
+5. **Mantener backup de la BD**: Antes de migraciones importantes en producción
 
 ---
 
