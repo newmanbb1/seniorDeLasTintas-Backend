@@ -57,7 +57,7 @@ export class AuthService {
       full_name: dto.full_name,
       role: UserRole.ADMIN,
       active: true,
-      created_by: dto.email,
+      created_by:this.configService.get<string>('SYSTEM_AUDIT_USER_ID'),
     });
     await this.userRepository.save(user);
 
