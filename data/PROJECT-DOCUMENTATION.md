@@ -637,6 +637,16 @@ Todos los endpoints requieren el prefijo `/api`
 | GET | `/api/auth/profile` | Perfil del usuario actual | ✅ JWT |
 | GET | `/api/auth/secretarias` | Listar todas las secretarias (solo admin) | ✅ JWT |
 
+**Registro del primer admin (SOLO UNA VEZ):**
+```json
+POST /api/auth/register
+{
+  "email": "admin@senordelastintas.com",
+  "password": "admin123",
+  "full_name": "Administrador Principal"
+}
+```
+
 **Body login admin:**
 ```json
 {
@@ -656,6 +666,19 @@ Todos los endpoints requieren el prefijo `/api`
 ```json
 {
   "refresh_token": "eyJhbG..."
+}
+```
+
+**Body register-secretaria:**
+```json
+POST /api/auth/register-secretaria
+Authorization: Bearer <admin_token>
+
+{
+  "email": "secretaria@email.com",
+  "password": "password123",
+  "full_name": "María Secretaria",
+  "branch_id": "uuid-sucursal-asignada"
 }
 ```
 
@@ -681,6 +704,26 @@ Todos los endpoints requieren el prefijo `/api`
 | PATCH | `/api/branch/:id` | Actualizar sucursal | ✅ Admin |
 | DELETE | `/api/branch/:id` | Eliminar (soft delete) | ✅ Admin |
 
+**Body crear sucursal:**
+```json
+POST /api/branch
+{
+  "name": "Sucursal Centro",
+  "address": "Av. Principal #123, Centro",
+  "opening_hours": "Lun-Sáb: 9:00-20:00, Dom: 10:00-18:00",
+  "location_link": "https://maps.google.com/?q=19.4326,-99.1332"
+}
+```
+
+**Body actualizar sucursal:**
+```json
+PATCH /api/branch/:id
+{
+  "name": "Sucursal Centro (Renovada)",
+  "opening_hours": "Lun-Sáb: 8:00-21:00"
+}
+```
+
 ---
 
 ### 4. Employee (Empleados)
@@ -694,6 +737,27 @@ Todos los endpoints requieren el prefijo `/api`
 | PATCH | `/api/employee/:id/toggle-active` | Activar/Desactivar | ✅ Admin/Secretaria |
 | DELETE | `/api/employee/:id` | Eliminar (soft delete) | ✅ Admin |
 
+**Body crear empleado:**
+```json
+POST /api/employee
+{
+  "full_name": "Juan Pérez",
+  "access_pin": "1234",
+  "position": "Vendedor",
+  "branch_id": "uuid-sucursal",
+  "active": true
+}
+```
+
+**Body actualizar empleado:**
+```json
+PATCH /api/employee/:id
+{
+  "full_name": "Juan Carlos Pérez",
+  "position": "Encargado de ventas"
+}
+```
+
 ---
 
 ### 5. Supply (Insumos - Catálogo Central)
@@ -705,6 +769,25 @@ Todos los endpoints requieren el prefijo `/api`
 | GET | `/api/supply/:id` | Obtener por ID | ✅ Admin/Secretaria |
 | PATCH | `/api/supply/:id` | Actualizar insumo | ✅ Admin |
 | DELETE | `/api/supply/:id` | Eliminar (soft delete) | ✅ Admin |
+
+**Body crear insumo:**
+```json
+POST /api/supply
+{
+  "name": "Tinta Canon PG-510",
+  "category": "Tintas",
+  "unit_of_measure": "unidades"
+}
+```
+
+**Body actualizar insumo:**
+```json
+PATCH /api/supply/:id
+{
+  "name": "Tinta Canon PG-510 (Negro)",
+  "category": "Tintas Originales"
+}
+```
 
 ---
 
@@ -719,6 +802,56 @@ Todos los endpoints requieren el prefijo `/api`
 | PATCH | `/api/inventory/:id/adjust` | Ajustar cantidad (±) | ✅ Admin/Secretaria |
 | POST | `/api/inventory/transfer` | **TRASPASO 1 PAGO (ATÓMICO)** | ✅ Admin/Secretaria |
 | DELETE | `/api/inventory/:id` | Eliminar (soft delete) | ✅ Admin |
+
+**Body crear inventario:**
+```json
+POST /api/inventory
+{
+  "branch_id": "uuid-sucursal",
+  "supply_id": "uuid-insumo",
+  "current_quantity": 50,
+  "minimum_stock": 10
+}
+```
+
+**Body ajustar cantidad:**
+```json
+PATCH /api/inventory/:id/adjust
+{
+  "adjustment": -5
+}
+```
+
+**Body transferencia atómica (RECOMENDADO):**
+```json
+POST /api/inventory/transfer
+{
+  "origin_branch_id": "uuid-sucursal-origen",
+  "destination_branch_id": "uuid-sucursal-destino",
+  "supply_id": "uuid-insumo",
+  "quantity": 10
+}
+```
+
+**Respuesta de transferencia:**
+```json
+{
+  "success": true,
+  "data": {
+    "transfer_id": "uuid-generado",
+    "idempotency_key": "a1b2c3d4e5f6...",
+    "idempotency_replayed": false,
+    "supply_name": "Tinta Canon PG-510",
+    "origin_branch": "Sucursal Centro",
+    "destination_branch": "Sucursal Norte",
+    "quantity": 10,
+    "previous_origin_quantity": 50,
+    "new_origin_quantity": 40,
+    "previous_destination_quantity": 20,
+    "new_destination_quantity": 30
+  }
+}
+```
 
 ---
 
@@ -797,6 +930,47 @@ Content-Type: multipart/form-data
 **Ver imagen/video (Público - sin auth):**
 ```
 GET http://localhost:3000/uploads/images/supplies/1234567890-abc.jpg
+```
+
+**Ejemplo de subida con JavaScript:**
+```javascript
+// Subir imagen
+async function uploadImage(file) {
+  const token = localStorage.getItem('access_token');
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const response = await fetch('/api/uploads/images', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    throw new Error('Error al subir imagen');
+  }
+  
+  const { data } = await response.json();
+  return data.url; // URL de la imagen subida
+}
+
+// Uso con input de archivo:
+const fileInput = document.querySelector('input[type="file"]');
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    try {
+      const url = await uploadImage(file);
+      console.log('Imagen subida:', url);
+      // Mostrar preview
+      document.querySelector('#preview').src = url;
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }
+});
 ```
 
 ---
@@ -1319,6 +1493,79 @@ Todas las respuestas siguen un formato estandarizado:
 }
 ```
 
+### Tabla de Errores HTTP
+
+| Código | Significado | Cuándo ocurre | Qué hacer |
+|--------|-------------|---------------|-----------|
+| 400 | Bad Request | Datos inválidos o faltantes | Verificar el body de la petición |
+| 401 | Unauthorized | Token expirado o inválido | Renovar token con `/auth/refresh` |
+| 403 | Forbidden | Rol insuficiente | Verificar permisos del usuario |
+| 404 | Not Found | Recurso no existe | Verificar el ID enviado |
+| 409 | Conflict | Recurso duplicado | Verificar si ya existe |
+| 429 | Too Many Requests | Rate limit superado | Esperar y reintentar |
+
+### Manejo de Token Expirado (401)
+
+Cuando el backend responde con 401, el frontend debe intentar renovar el token:
+
+```javascript
+async function fetchWithRefresh(url, options = {}) {
+  let response = await fetch(url, options);
+  
+  if (response.status === 401) {
+    // Intentar renovar token
+    const refreshToken = localStorage.getItem('refresh_token');
+    const refreshResponse = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    
+    if (refreshResponse.ok) {
+      const { data } = await refreshResponse.json();
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      
+      // Reintentar con nuevo token
+      options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${data.access_token}`,
+      };
+      response = await fetch(url, options);
+    } else {
+      // Refresh falló - redirigir a login
+      localStorage.clear();
+      window.location.href = '/login';
+    }
+  }
+  
+  return response;
+}
+```
+
+### Manejo de Rate Limit (429)
+
+Cuando el backend responde con 429, el frontend debe esperar antes de reintentar:
+
+```javascript
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    const response = await fetch(url, options);
+    
+    if (response.status === 429) {
+      // Esperar antes de reintentar (backoff exponencial)
+      const waitTime = Math.pow(2, i) * 1000; // 1s, 2s, 4s
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      continue;
+    }
+    
+    return response;
+  }
+  
+  throw new Error('Rate limit superado después de múltiples intentos');
+}
+```
+
 ### Paginación
 
 Todos los endpoints GET con lista usan paginación:
@@ -1333,13 +1580,43 @@ Todos los endpoints GET con lista usan paginación:
 // Respuesta
 {
   "success": true,
-  "data": [...],
+  "data": [
+    { "id": "uuid-1", "name": "Sucursal Centro", ... },
+    { "id": "uuid-2", "name": "Sucursal Norte", ... }
+  ],
   "meta": {
     "total": 50,
     "limit": 10,
     "offset": 0
   }
 }
+```
+
+**Ejemplo real de paginación en JavaScript:**
+```javascript
+async function getBranches(page = 0, pageSize = 10) {
+  const token = localStorage.getItem('access_token');
+  const response = await fetch(
+    `/api/branch?limit=${pageSize}&offset=${page * pageSize}`,
+    {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }
+  );
+  
+  const { data, meta } = await response.json();
+  
+  return {
+    branches: data,
+    totalPages: Math.ceil(meta.total / meta.limit),
+    currentPage: Math.floor(meta.offset / meta.limit) + 1,
+    totalItems: meta.total,
+  };
+}
+
+// Uso:
+const { branches, totalPages, currentPage } = await getBranches(0, 10);
+console.log(`Página ${currentPage} de ${totalPages}`);
+console.log(branches); // Array de sucursales
 ```
 
 ### Filtros Comunes
