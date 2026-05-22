@@ -121,6 +121,7 @@ export class AuthService {
 
     const payload: JwtPayload = {
       sub: employee.id,
+      id: employee.id,
       email: `employee-${employee.id}`,
       role: 'employee',
       type: 'employee',
@@ -194,6 +195,7 @@ export class AuthService {
   private async generateTokens(user: User): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
     const payload: JwtPayload = {
       sub: user.id,
+      id: user.id,
       email: user.email,
       role: user.role,
       type: 'access',
@@ -202,6 +204,7 @@ export class AuthService {
 
     const refreshPayload: JwtRefreshPayload = {
       sub: user.id,
+      id: user.id,
       email: user.email,
       role: user.role,
       type: 'refresh',

@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 
 export interface JwtPayload {
   sub: string;
+  id: string;
   email: string;
   role: string;
   type: 'access' | 'employee';
@@ -22,15 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<JwtPayload & { id: string }> {
-    return {
-      id: payload.sub,
-      sub: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      type: payload.type,
-      employee_id: payload.employee_id,
-      branch_id: payload.branch_id,
-    };
+  async validate(payload: JwtPayload): Promise<JwtPayload> {
+    return payload;
   }
 }

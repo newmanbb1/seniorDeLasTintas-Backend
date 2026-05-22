@@ -178,7 +178,7 @@ src/
 
 ### Estructura del JWT
 
-**Access Token (15 minutos):**
+**Access Token (15 minutos) — payload firmado:**
 ```json
 {
   "sub": "uuid-del-usuario",
@@ -191,7 +191,19 @@ src/
 }
 ```
 
-**Refresh Token (7 días):**
+**Access Token (login con PIN de empleado):**
+```json
+{
+  "sub": "uuid-del-empleado",
+  "id": "uuid-del-empleado",
+  "email": "employee-uuid-del-empleado",
+  "role": "employee",
+  "type": "employee",
+  "employee_id": "uuid-del-empleado"
+}
+```
+
+**Refresh Token (7 días) — payload firmado:**
 ```json
 {
   "sub": "uuid-del-usuario",
@@ -199,6 +211,18 @@ src/
   "email": "admin@email.com",
   "role": "admin",
   "type": "refresh"
+}
+```
+
+**Token de Secretaria (incluye branch_id):**
+```json
+{
+  "sub": "uuid-usuario",
+  "id": "uuid-usuario",
+  "email": "secretaria@email.com",
+  "role": "secretaria",
+  "type": "access",
+  "branch_id": "uuid-sucursal-asignada"
 }
 ```
 
@@ -548,6 +572,51 @@ CORS_ORIGIN=http://localhost:3001,http://localhost:5173
 
 La documentación Swagger (`/docs`) solo está disponible en entorno de desarrollo (`NODE_ENV !== 'production'`).
 
+### Patrón de Soft Delete
+
+Todos los DELETE del sistema son **borrado lógico** (soft delete). No se eliminan registros de la BD.
+
+**Cómo funciona:**
+```typescript
+// En lugar de:
+await this.repository.softDelete(id)  // ❌ No usar
+
+// Se usa:
+await this.repository.update(
+  { id },
+  { deleted_at: new Date(), deleted_by: userId }  // ✅ Atómico
+)
+```
+
+**Por qué:** El método `softDelete()` + `save()` provoca que `save()` sobrescriba `deleted_at` con `null`, anulando el borrado. La solución es usar `update()` que establece `deleted_at` y `deleted_by` en una sola operación.
+
+**Filtrado en consultas:** Todos los `findOne()` en servicios incluyen `deleted_at: IsNull()` para excluir registros eliminados.
+
+### Auditoría (created_by / updated_by / deleted_by)
+
+Todos los servicios que modifican datos escriben el ID del usuario autenticado directamente en los campos de auditoría:
+
+```typescript
+// Ejemplo en un servicio:
+async create(dto: CreateDto, userId: string) {
+  return this.repository.save({
+    ...dto,
+    created_by: userId,   // ✅ Directo desde @GetUser('id')
+    updated_by: userId,
+  });
+}
+```
+
+**Excepción:** Los endpoints públicos `/attendance/check-in` y `/attendance/check-out` no tienen usuario autenticado, por lo que usan `SYSTEM_AUDIT_USER_ID` (variable de entorno).
+
+**Flujo:**
+1. El JWT incluye `id` (mapeado desde `sub` en JwtStrategy)
+2. El controlador extrae el ID con `@GetUser('id')`
+3. Pasa `userId` al servicio
+4. El servicio lo escribe en `created_by` / `updated_by` / `deleted_by`
+
+No se usa `getAuditUserId()` como fallback — si no hay usuario autenticado, el endpoint no debería modificar datos (excepto check-in/check-out).
+
 ---
 
 ## ⚡ Idempotencia en Transferencias
@@ -617,7 +686,7 @@ http://localhost:3000/docs
 
 ---
 
-> ⚠️ **IMPORTANTE**: Todos los endpoints tienen el prefiio `/api`
+> ⚠️ **IMPORTANTE**: Todos los endpoints tienen el prefijo `/api`
 > 
 > Ejemplo: `http://localhost:3000/api/auth/login`
 > 
@@ -635,16 +704,16 @@ Todos los endpoints requieren el prefijo `/api`
 
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
-| POST | `/api/auth/register` | Registrar primer admin | ❌ Público |
+| POST | `/api/auth/register` | Registrar admin | ❌ Público |
 | POST | `/api/auth/login` | Login admin (email + password) | ❌ Público |
 | POST | `/api/auth/login-pin` | Login empleado (solo PIN) | ❌ Público |
 | POST | `/api/auth/refresh` | Renovar access token | ❌ Público |
 | POST | `/api/auth/logout` | Cerrar sesión | ✅ JWT |
 | POST | `/api/auth/register-secretaria` | Crear secretaria (solo admin) | ✅ JWT |
 | GET | `/api/auth/profile` | Perfil del usuario actual | ✅ JWT |
-| GET | `/api/auth/secretarias` | Listar todas las secretarias (solo admin) | ✅ JWT |
+| GET | `/api/auth/secretarias` | Listar todas las secretarias (solo admin) | ✅ ADMIN |
 
-**Registro del primer admin (SOLO UNA VEZ):**
+**Registro de admin:**
 ```json
 POST /api/auth/register
 {
@@ -1226,7 +1295,7 @@ El chatbot funciona para **cualquier número** que envíe mensajes al WhatsApp d
 #### Enviar mensaje de prueba desde API
 
 ```bash
-curl -X POST "http://localhost:3000/chatbot/test" \
+curl -X POST "http://localhost:3000/api/chatbot/test" \
   -H "Content-Type: application/json" \
   -d '{"phone": "59167645041", "message": "Hola"}'
 ```
@@ -1235,13 +1304,13 @@ curl -X POST "http://localhost:3000/chatbot/test" \
 
 ```bash
 # Últimos 10 logs
-curl "http://localhost:3000/chatbot/logs?limit=10"
+curl "http://localhost:3000/api/chatbot/logs?limit=10"
 
 # Filtrar por número
-curl "http://localhost:3000/chatbot/logs?phone_number=59167645041"
+curl "http://localhost:3000/api/chatbot/logs?phone_number=59167645041"
 
 # Filtrar por intención
-curl "http://localhost:3000/chatbot/logs?detected_intention=Menu_Principal"
+curl "http://localhost:3000/api/chatbot/logs?detected_intention=Menu_Principal"
 ```
 
 ### Configurar WhatsApp
@@ -1324,7 +1393,7 @@ El sistema tiene 3 tipos de usuarios con diferentes niveles de acceso:
 
 | Módulo | ADMIN | SECRETARIA | EMPLOYEE |
 |--------|-------|------------|----------|
-| **Auth** | ✅ Login/Register/Logout | ✅ Login/Logout | ❌ |
+| **Auth** | ✅ Login/Register/Logout | ✅ Login/Logout/Profile | ❌ |
 | **Branch** | ✅ CRUD | ✅ Ver la suya | ❌ |
 | **Supply** | ✅ CRUD | ✅ Ver catálogo | ❌ |
 | **Inventory** | ✅ CRUD | ✅ Su sucursal | ❌ |
@@ -1340,8 +1409,10 @@ Las secretarias tienen una **sucursal asignada** (branch_id) en su perfil. JWT i
 ```json
 {
   "sub": "uuid-usuario",
+  "id": "uuid-usuario",
   "email": "secretaria@email.com",
   "role": "secretaria",
+  "type": "access",
   "branch_id": "uuid-sucursal-centro"
 }
 ```
@@ -1462,8 +1533,8 @@ El sistema utiliza JWT (JSON Web Tokens) para la autenticación:
 
 | Endpoint | Roles Permitidos |
 |----------|-----------------|
-| `/auth/logout` | ADMIN |
-| `/auth/profile` | ADMIN, SECRETARIA |
+| `/auth/logout` | Any authenticated |
+| `/auth/profile` | Any authenticated |
 | `/auth/register-secretaria` | ADMIN |
 | `/branch/*` | ADMIN, SECRETARIA |
 | `/employee/*` | ADMIN, SECRETARIA |
@@ -1476,17 +1547,15 @@ El sistema utiliza JWT (JSON Web Tokens) para la autenticación:
 | `/uploads/videos` | ADMIN, SECRETARIA |
 | `/chatbot/test` | ADMIN |
 
-### Endpoints Protegidos (Requieren JWT + Rol Admin)
-
-Todos los endpoints de:
-- `/branch/*`
-- `/employee/*`
-- `/supply/*`
-- `/inventory/*`
-- `/stock-transfer/*`
-- `/attendance/*` (excepto check-in/check-out)
-- `/auth/logout`
-- `/auth/profile`
+**Nota:** Aunque la tabla anterior muestra `ADMIN, SECRETARIA` para la mayoría de módulos, las operaciones **DELETE** y algunos endpoints específicos requieren exclusivamente `ADMIN`:
+- `DELETE /api/branch/:id`
+- `DELETE /api/employee/:id`
+- `DELETE /api/supply/:id`
+- `DELETE /api/inventory/:id`
+- `DELETE /api/stock-transfer/:id`
+- `DELETE /api/attendance/:id`
+- `POST /api/auth/register-secretaria`
+- `POST /api/chatbot/test`
 
 ### Manejo de Errores
 
@@ -1691,6 +1760,150 @@ Body: { "email": "admin@senordelastintas.com", "password": "admin123" }
 
 ---
 
+## 🧪 Pruebas del Frontend contra la API
+
+### Entorno Local (Sin Docker)
+
+El frontend se conecta directamente al backend en `http://localhost:3000`.
+
+**Requisitos:**
+- PostgreSQL corriendo en `localhost:5432`
+- Node.js 20+
+- Backend iniciado con `npm run start:dev`
+
+**Configuración del Frontend:**
+```dart
+// Configuración base de la API
+const String apiBaseUrl = 'http://localhost:3000/api';
+
+// Opcional: si el frontend corre en otro puerto, configurar CORS en el backend
+// .env del backend:
+CORS_ORIGIN=http://localhost:3001,http://localhost:5173,http://tu-frontend.local
+```
+
+**Ejemplo de login desde Flutter:**
+```dart
+Future<Map<String, dynamic>> login(String email, String password) async {
+  final response = await http.post(
+    Uri.parse('$apiBaseUrl/auth/login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'email': email, 'password': password}),
+  );
+
+  if (response.statusCode == 201) {
+    return jsonDecode(response.body)['data'];
+  }
+  throw Exception('Error al iniciar sesión');
+}
+```
+
+**Probar con curl (local):**
+```bash
+# Seed
+curl -X POST http://localhost:3000/api/seed/all
+
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@senordelastintas.com","password":"admin123"}'
+```
+
+### Entorno Docker
+
+El frontend se conecta al backend expuesto en `http://localhost:3000` (mapeado por Docker).
+
+**Requisitos:**
+- Docker y Docker Compose instalados
+- Contenedores levantados con `docker compose up -d --build`
+
+**Configuración del Frontend:**
+```dart
+// Misma URL que local (el puerto 3000 se mapea al contenedor)
+const String apiBaseUrl = 'http://localhost:3000/api';
+```
+
+**Probar con curl (Docker):**
+```bash
+# 1. Verificar que el backend esté saludable
+curl http://localhost:3000/api/seed/status
+
+# 2. Ejecutar seed dentro del contenedor
+docker compose exec backend curl -X POST http://localhost:3000/api/seed/all
+
+# 3. O desde fuera del contenedor
+curl -X POST http://localhost:3000/api/seed/all
+
+# 4. Login de admin
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@senordelastintas.com","password":"admin123"}'
+```
+
+**Si el frontend corre dentro de Docker (otro contenedor):**
+```yaml
+# docker compose.yml del frontend
+services:
+  frontend:
+    # ...
+    environment:
+      API_URL: http://backend:3000/api  # Nombre del servicio backend
+```
+
+### Flujo Completo de Pruebas
+
+```bash
+# ────── 1. LOCAL ──────
+
+# Terminal 1: Iniciar backend
+cd backend && npm run start:dev
+
+# Terminal 2: Probar endpoints
+curl http://localhost:3000/api/seed/status
+curl -X POST http://localhost:3000/api/seed/all
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@senordelastintas.com","password":"admin123"}'
+
+# ────── 2. DOCKER ──────
+
+# Construir e iniciar
+docker compose up -d --build
+
+# Ejecutar migraciones
+docker compose exec backend npm run migration:run
+
+# Sembrar datos
+curl -X POST http://localhost:3000/api/seed/all
+
+# Login de prueba
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@senordelastintas.com","password":"admin123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['access_token'])")
+
+# Probar endpoint protegido
+curl http://localhost:3000/api/branch \
+  -H "Authorization: Bearer $TOKEN"
+
+# Probar subida de imagen
+curl -X POST http://localhost:3000/api/uploads/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/ruta/a/imagen.jpg"
+```
+
+### Errores Comunes en Pruebas
+
+| Síntoma | Causa | Solución |
+|---------|-------|----------|
+| `ECONNREFUSED :3000` | Backend no está corriendo | Verificar `docker compose ps` o `npm run start:dev` |
+| `401 Unauthorized` | Token ausente o expirado | Hacer login de nuevo o renovar token |
+| `403 Forbidden` | Rol insuficiente | Verificar que el usuario tenga el rol necesario |
+| `429 Too Many Requests` | Rate limit superado | Esperar 1 segundo y reintentar |
+| `Cannot find module` | Migraciones no ejecutadas | Ejecutar `migration:run` |
+| Imagen/video no se ve en frontend | CORS mal configurado | Agregar origen del frontend a `CORS_ORIGIN` |
+
+---
+
 ## 🐳 Docker
 
 ### Servicios
@@ -1723,6 +1936,7 @@ DB_SYNC=true
 
 # Chatbot
 EVOLUTION_URL=http://evolution:8080
+INSTANCE_API_KEY=tu_instance_api_key
 
 # Auditoría
 SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
@@ -1732,82 +1946,30 @@ JWT_SECRET=super-secret-key-jwt-senior-de-las-tintas-2024
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 JWT_REFRESH_DAYS=7
+
+# CORS
+CORS_ORIGIN=http://localhost:3001
+
+# NestJS
+NODE_ENV=development
+PORT=3000
 ```
 
 ### Comandos Docker
 
 ```bash
 # Iniciar todos los servicios
-docker-compose up --build
+docker compose up --build
 
 # Ver logs del backend
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # Detener servicios
-docker-compose down
+docker compose down
 
 # Ver estado
-docker-compose ps
+docker compose ps
 ```
-
----
-
-### 🔧 Despliegue Completo (Desde Cero)
-
-Este es el flujo completo para levantar la aplicación desde cero en producción:
-
-#### 1. Limpiar contenedores y volúmenes anteriores
-
-```bash
-docker compose down -v
-```
-
-#### 2. Construir e iniciar servicios
-
-```bash
-docker compose up -d --build
-```
-
-Este comando:
-- Construye la imagen del backend
-- Crea las redes y volúmenes
-- Inicia todos los contenedores
-- Espera a que las bases de datos estén saludables
-
-#### 3. Ejecutar migraciones
-
-```bash
-docker compose exec backend npm run migration:run
-```
-
-**Importante:** La base de datos se crea vacía (solo estructura). Las migraciones crean las tablas.
-
-#### 4. (Opcional) Insertar datos de prueba
-
-```bash
-curl -X POST http://localhost:3000/api/seed/all
-```
-
-Esto inserta:
-- 1 admin
-- 3 sucursales
-- 10 insumos
-- 5 empleados
-- 30 registros de inventario
-
-#### 5. Verificar que todo funcione
-
-```bash
-# Estado del sistema
-curl http://localhost:3000/api/seed/status
-
-# Login de admin
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@senordelastintas.com","password":"admin123"}'
-```
-
----
 
 ### ⚙️ Configuración DB_SYNC
 
@@ -1818,7 +1980,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 **En Docker (producción):**
 ```yaml
-# docker-compose.yml
+# docker compose.yml
 environment:
   - DB_SYNC=${DB_SYNC:-false}  # Por defecto false
 ```
@@ -1918,49 +2080,25 @@ curl http://localhost:8080/instance/fetchInstances \
 
 ## 🗄️ Migraciones de Base de Datos
 
-### Descripción General
+El proyecto usa **TypeORM Migrations** para el esquema de BD en producción (`DB_SYNC=false`).
+En desarrollo local, `DB_SYNC=true` crea las tablas automáticamente desde las entidades.
 
-El proyecto utiliza **TypeORM Migrations** para gestionar el esquema de la base de datos en lugar de `synchronize`. Esto proporciona:
+### Comandos Útiles
 
-- ✅ Control/versionado del esquema de DB
-- ✅ Despliegues seguros en producción
-- ✅ Rollback de cambios si es necesario
-- ✅ Historial de cambios en el código
+```bash
+# Ejecutar migraciones pendientes (local)
+npm run migration:run
 
-### Configuración
+# Ejecutar migraciones (Docker)
+docker compose exec backend npm run migration:run
 
-#### Archivos Clave
-
-| Archivo | Propósito |
-|---------|-----------|
-| `src/data-source.ts` | Configuración para CLI de TypeORM |
-| `src/migrations/` | Directorio donde se guardan las migraciones |
-| `.env` | Variable `DB_SYNC` para controlar sincronización |
-
-#### data-source.ts
-
-```typescript
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'backend',
-  synchronize: false,          // ⚠️ Siempre false (usa migraciones)
-  migrationsRun: false,        // ⚠️ Siempre false (manual)
-  entities: ['src/modules/**/*.entity.ts'],
-  migrations: ['src/migrations/*.ts'],
-  migrationsTableName: 'migrations',
-});
+# Generar una nueva migración desde cambios en entidades
+npm run migration:generate -- src/migrations/<nombre-descriptivo>
 ```
 
-#### Variables de Entorno
-
-| Variable | Valor | Descripción |
-|----------|-------|-------------|
-| `DB_SYNC` | `true` | Desarrollo (sincronización automática) |
-| `DB_SYNC` | `false` | Producción (requiere migraciones) |
+| Variable | `true` | `false` |
+|----------|--------|---------|
+| `DB_SYNC` | Desarrollo (automático) | Producción (requiere `migration:run`) |
 
 ---
 
@@ -1989,211 +2127,6 @@ npm run migration:generate -- src/migrations/modificar-relacion-inventory
 **Resultado:**
 - Se genera un archivo en `src/migrations/` con formato: `1779298031234-nombre.ts`
 - TypeORM detecta cambios entre entidades y DB actual
-
-#### 2. Ejecutar todas las migraciones pendientes
-
-```bash
-npm run migration:run
-```
-
-**Efecto:**
-- Ejecuta TODAS las migraciones que NO se han aplicado aún
-- Crea la tabla `migrations` para tracking
-
-#### 3. Revertir la última migración
-
-```bash
-npm run migration:revert
-```
-
-**Efecto:**
-- Deshace solo la última migración aplicada
-- Útil para correcciones rápidas en desarrollo
-
-#### 4. Ver estado de migraciones
-
-```bash
-npm run migration:show
-```
-
-**Muestra:**
-- Lista de migraciones aplicadas
-- Migraciones pendientes
-
----
-
-### Desarrollo Local (Sin Docker)
-
-#### Flujo Completo
-
-```bash
-# 1. Configurar .env para desarrollo
-DB_SYNC=true           # Sincroniza automáticamente (tablas se crean)
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=TintasDB
-DB_USERNAME=postgres
-DB_PASSWORD=Tintas@2024Secure
-
-# 2. Ejecutar la aplicación (sincroniza automáticamente)
-npm run start:dev
-```
-
-#### Cuándo usar migraciones en desarrollo
-
-```bash
-# Cuando realizas cambios en entidades y quieres generar migración
-DB_SYNC=false          # Cambiar a false para probar migraciones
-
-# Generar migración basada en cambios
-npm run migration:generate -- src/migrations/mi-cambio
-
-# Ejecutar migración
-npm run migration:run
-```
-
----
-
-### Producción (Docker Compose)
-
-#### Flujo de Despliegue
-
-```bash
-# 1. Levantar servicios (crea la BD pero NO las tablas)
-docker compose up -d
-
-# 2. Verificar que el backend esté corriendo
-docker compose ps
-
-# 3. Ejecutar migraciones dentro del container
-docker compose exec backend npm run migration:run
-```
-
-#### Notas Importantes
-
-- **Docker crea la BD**: El servicio `backend-db` en docker-compose.yml crea la base de datos `backend` automáticamente
-- **Las tablas NO se crean automáticamente**: Porque `DB_SYNC=false` por defecto
-- **Migraciones son necesarias**: Después de levantar los containers, ejecutar `migration:run`
-
-#### Variabe DB_SYNC en Docker
-
-En `docker-compose.yml`:
-```yaml
-environment:
-  - DB_SYNC=${DB_SYNC:-false}  # Por defecto false (producción)
-```
-
-Para desarrollo con Docker:
-```bash
-DB_SYNC=true docker compose up -d
-```
-
----
-
-### Ejemplo Completo: Agregar un Nuevo Campo
-
-#### Paso 1: Modificar la entidad
-
-```typescript
-// src/modules/supply/entities/supply.entity.ts
-@Entity()
-export class Supply extends BaseEntity {
-  // ... campos existentes ...
-
-  @Column({ default: false })
-  is_hazardous: boolean;  // ← Nuevo campo agregado
-}
-```
-
-#### Paso 2: Generar la migración
-
-```bash
-npm run migration:generate -- src/migrations/agregar-campo-is-hazardous
-```
-
-#### Paso 3: Revisar la migración generada
-
-```typescript
-// src/migrations/1779298031234-agregar-campo-is-hazardous.ts
-export class AgregarCampoIsHazardous1779298031234 {
-  name = 'AgregarCampoIsHazardous1779298031234';
-
-  async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "supply" ADD "is_hazardous" boolean DEFAULT false`);
-  }
-
-  async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "supply" DROP COLUMN "is_hazardous"`);
-  }
-}
-```
-
-#### Paso 4: Ejecutar la migración
-
-```bash
-# Desarrollo local
-npm run migration:run
-
-# Producción (Docker)
-docker compose exec backend npm run migration:run
-```
-
-#### Paso 5: Verificar
-
-```bash
-# Ver estado de migraciones
-npm run migration:show
-```
-
----
-
-### Solución de Problemas
-
-#### "No changes in database schema were found"
-
-**Causa:** Las tablas ya están sincronizadas (quizás con `DB_SYNC=true` antes).
-
-**Solución:**
-1. Verificar qué tablas existen:
-   ```bash
-   psql -U postgres -d TintasDB -c "\dt"
-   ```
-2. Si las tablas ya existen, no necesitas migración
-3. Los cambios futuros sí generarán migraciones
-
-#### Error de conexión a la base de datos
-
-**Verificar:**
-1. Que PostgreSQL esté corriendo
-2. Que las credenciales en `.env` sean correctas
-3. Que la base de datos exista
-
-```bash
-# Listar bases de datos
-psql -U postgres -h localhost -l
-```
-
-#### Migración fallida en producción
-
-1. **No panikear**: La transacción hace rollback automáticamente
-2. **Revisar logs**:
-   ```bash
-   docker compose logs backend
-   ```
-3. **Corregir** el código o la migración
-4. **Reintentar** después de corregir
-
----
-
-### Mejores Prácticas
-
-1. **Prefijo claro en nombres**: `agregar-campo-`, `crear-tabla-`, `modificar-relacion-`
-2. **Una migración por cambio**: Mantener migraciones pequeñas y específicas
-3. **Probar en desarrollo primero**: Antes de producción, всегда probar locally
-4. **No editar migraciones ya aplicadas**: Si hay error, crear nueva migración
-5. **Mantener backup de la BD**: Antes de migraciones importantes en producción
-
----
 
 ## 🔄 Flujos de Negocio
 
@@ -2279,8 +2212,12 @@ psql -U postgres -h localhost -l
 ## 📅 Funcionalidades Completadas
 
 - [x] Módulo de autenticación (JWT) ✅
-- [x] Roles y permisos (Admin, Empleado) ✅
-- [x] Sistema de auditoría (created_by, updated_by, deleted_by) ✅
+- [x] Roles y permisos (Admin, Secretaria, Empleado) ✅
+- [x] Sistema de auditoría (created_by, updated_by, deleted_by con userId directo) ✅
+- [x] Soft delete atómico (update en lugar de softDelete + save) ✅
+- [x] Seguridad en subidas (magic bytes, mimetype map, path traversal) ✅
+- [x] Idempotencia en transferencias (SHA256 automático) ✅
+- [x] Rate limiting (3 tiers) y Helmet (CSP, HSTS) ✅
 - [x] Seed de datos de prueba ✅
 
 ---
@@ -2289,7 +2226,7 @@ psql -U postgres -h localhost -l
 
 Para dudas técnicas sobre la API:
 - Consultar Swagger: `http://localhost:3000/docs`
-- Revisar logs: `docker-compose logs -f backend`
+- Revisar logs: `docker compose logs -f backend`
 
 ---
 

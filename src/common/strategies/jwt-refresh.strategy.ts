@@ -7,6 +7,7 @@ import { JwtPayload } from './jwt.strategy';
 export type { JwtPayload };
 export interface JwtRefreshPayload {
   sub: string;
+  id: string;
   email: string;
   role: string;
   type: 'refresh';
@@ -27,12 +28,6 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
     if (payload.type !== 'refresh') {
       return null;
     }
-    return {
-      sub: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      type: payload.type,
-      branch_id: payload.branch_id,
-    };
+    return payload;
   }
 }
