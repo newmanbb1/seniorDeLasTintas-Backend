@@ -36,7 +36,7 @@ import { UserRole } from "../auth/entities/user.entity";
 function getUserContext(user: any): UserContext | undefined {
   if (!user) return undefined;
   return {
-    userId: user.sub || user.id,
+    userId: user.id,
     role: user.role,
     branch_id: user.branch_id,
   };
@@ -58,7 +58,7 @@ export class EmployeeController {
   @ApiCreatedWrapped()
   async create(@Body() createEmployeeDto: CreateEmployeeDto, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.employeeService.create(createEmployeeDto, user?.sub, userContext));
+    return ok(await this.employeeService.create(createEmployeeDto, user?.id, userContext));
   }
 
   @Get()
@@ -90,7 +90,7 @@ export class EmployeeController {
     @GetUser() user: any,
   ) {
     const userContext = getUserContext(user);
-    return ok(await this.employeeService.update(id, updateEmployeeDto, user?.sub, userContext));
+    return ok(await this.employeeService.update(id, updateEmployeeDto, user?.id, userContext));
   }
 
   @Delete(":id")
@@ -99,7 +99,7 @@ export class EmployeeController {
   @ApiOkWrapped()
   async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.employeeService.remove(id, user?.sub, userContext));
+    return ok(await this.employeeService.remove(id, user?.id, userContext));
   }
 
   @Patch(":id/toggle-active")
@@ -108,6 +108,6 @@ export class EmployeeController {
   @ApiOkWrapped()
   async toggleActive(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.employeeService.toggleActive(id, user?.sub, userContext));
+    return ok(await this.employeeService.toggleActive(id, user?.id, userContext));
   }
 }

@@ -38,7 +38,7 @@ import { AllowAnonymous } from "../../common/guards/allow-anon.decorator";
 function getUserContext(user: any): UserContext | undefined {
   if (!user) return undefined;
   return {
-    userId: user.sub || user.id,
+    userId: user.id,
     role: user.role,
     branch_id: user.branch_id,
   };
@@ -122,7 +122,7 @@ export class AttendanceController {
     @GetUser() user: any,
   ) {
     const userContext = getUserContext(user);
-    return ok(await this.attendanceService.update(id, updateAttendanceDto, user?.sub, userContext));
+    return ok(await this.attendanceService.update(id, updateAttendanceDto, user?.id, userContext));
   }
 
   @Delete(":id")
@@ -133,6 +133,6 @@ export class AttendanceController {
   @ApiOkWrapped()
   async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.attendanceService.remove(id, user?.sub, userContext));
+    return ok(await this.attendanceService.remove(id, user?.id, userContext));
   }
 }

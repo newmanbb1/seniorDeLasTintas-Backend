@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Like, Repository } from "typeorm";
 import { Branch } from "./entities/branch.entity";
@@ -30,18 +29,9 @@ export class BranchService {
     private readonly employeeRepository: Repository<Employee>,
     @InjectRepository(Inventory)
     private readonly inventoryRepository: Repository<Inventory>,
-    private readonly configService: ConfigService,
   ) {}
 
-  private getAuditUserId(userId?: string): string {
-    if (userId) return userId;
-    return (
-      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
-      "00000000-0000-4000-8000-000000000001"
-    );
-  }
-
-  async create(dto: CreateBranchDto, userId?: string): Promise<Branch> {
+  async create(dto: CreateBranchDto, userId: string): Promise<Branch> {
     const existname = await this.branchRepository.findOne({
       where: { name:dto.name, deleted_at: IsNull() },
     });
@@ -52,7 +42,7 @@ export class BranchService {
     }
     const branch = this.branchRepository.create({
       ...dto,
-      created_by: this.getAuditUserId(userId),
+      created_by: userId,
     });
     return this.branchRepository.save(branch);
   }
@@ -97,7 +87,7 @@ export class BranchService {
     return branch;
   }
 
-  async update(id: string, dto: UpdateBranchDto, userId?: string): Promise<Branch> {
+  async update(id: string, dto: UpdateBranchDto, userId: string): Promise<Branch> {
     const branch = await this.findOne(id);
 
     if (dto.name && dto.name !== branch.name) {
@@ -112,11 +102,11 @@ export class BranchService {
     }
 
     Object.assign(branch, dto);
-    branch.updated_by = this.getAuditUserId(userId);
+    branch.updated_by = userId;
     return this.branchRepository.save(branch);
   }
 
-  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId: string): Promise<{ id: string; deleted: true }> {
     const branch = await this.findOne(id);
 
     const employeesCount = await this.employeeRepository.count({
@@ -137,9 +127,10 @@ export class BranchService {
       );
     }
 
-    await this.branchRepository.softDelete({ id });
-    branch.deleted_by = this.getAuditUserId(userId);
-    await this.branchRepository.save(branch);
+    await this.branchRepository.update({ id }, {
+      deleted_at: new Date(),
+      deleted_by: userId,
+    });
     return { id, deleted: true };
   }
 }

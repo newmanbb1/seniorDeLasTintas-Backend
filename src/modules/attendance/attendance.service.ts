@@ -35,8 +35,7 @@ export class AttendanceService {
     private readonly configService: ConfigService,
   ) {}
 
-  private getAuditUserId(userId?: string): string {
-    if (userId) return userId;
+  private getSystemUserId(): string {
     return (
       this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
       "00000000-0000-4000-8000-000000000001"
@@ -117,7 +116,7 @@ export class AttendanceService {
       check_in_status: status,
       check_out: null,
       hours_worked: "0",
-      created_by: this.getAuditUserId(),
+      created_by: this.getSystemUserId(),
     });
 
     return this.attendanceRepository.save(attendance);
@@ -167,7 +166,7 @@ export class AttendanceService {
 
     attendance.check_out = checkOutTime;
     attendance.hours_worked = hoursWorked;
-    attendance.updated_by = this.getAuditUserId();
+    attendance.updated_by = this.getSystemUserId();
 
     return this.attendanceRepository.save(attendance);
   }
@@ -217,7 +216,7 @@ export class AttendanceService {
 
   async findOne(id: string, userContext?: UserContext): Promise<Attendance> {
     const attendance = await this.attendanceRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
       relations: ["employee", "employee.branch"],
     });
     if (!attendance) {
@@ -233,7 +232,7 @@ export class AttendanceService {
     return attendance;
   }
 
-  async update(id: string, dto: UpdateAttendanceDto, userId?: string, userContext?: UserContext): Promise<Attendance> {
+  async update(id: string, dto: UpdateAttendanceDto, userId: string, userContext?: UserContext): Promise<Attendance> {
     const attendance = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -241,20 +240,21 @@ export class AttendanceService {
     }
 
     Object.assign(attendance, dto);
-    attendance.updated_by = this.getAuditUserId(userId);
+    attendance.updated_by = userId;
     return this.attendanceRepository.save(attendance);
   }
 
-  async remove(id: string, userId?: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
     const attendance = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
       throw new ForbiddenException('Las secretarias no pueden eliminar assistencias');
     }
 
-    await this.attendanceRepository.softDelete({ id });
-    attendance.deleted_by = this.getAuditUserId(userId);
-    await this.attendanceRepository.save(attendance);
+    await this.attendanceRepository.update({ id }, {
+      deleted_at: new Date(),
+      deleted_by: userId,
+    });
     return { id, deleted: true };
   }
 

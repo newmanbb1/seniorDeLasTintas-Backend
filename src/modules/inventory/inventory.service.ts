@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { createHash } from "crypto";
 import { DataSource, IsNull, LessThanOrEqual, Repository } from "typeorm";
@@ -36,19 +35,10 @@ export class InventoryService {
     private readonly supplyRepository: Repository<Supply>,
     @InjectRepository(StockTransfer)
     private readonly stockTransferRepository: Repository<StockTransfer>,
-    private readonly configService: ConfigService,
   ) {}
 
   private getDataSource(): DataSource {
     return this.inventoryRepository.metadata.connection;
-  }
-
-  private getAuditUserId(userId?: string): string {
-    if (userId) return userId;
-    return (
-      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
-      "00000000-0000-4000-8000-000000000001"
-    );
   }
 
   private isSecretaria(role: string): boolean {
@@ -65,7 +55,7 @@ export class InventoryService {
     return createHash('sha256').update(data).digest('hex');
   }
 
-  async create(dto: CreateInventoryDto, userId?: string, userContext?: UserContext): Promise<Inventory> {
+  async create(dto: CreateInventoryDto, userId: string, userContext?: UserContext): Promise<Inventory> {
     const { branch_id, supply_id } = dto;
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -103,7 +93,7 @@ export class InventoryService {
 
     const inventory = this.inventoryRepository.create({
       ...dto,
-      created_by: this.getAuditUserId(userId),
+      created_by: userId,
     });
     return this.inventoryRepository.save(inventory);
   }
@@ -141,7 +131,7 @@ export class InventoryService {
 
   async findOne(id: string, userContext?: UserContext): Promise<Inventory> {
     const inventory = await this.inventoryRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
       relations: ["branch", "supply"],
     });
     if (!inventory) {
@@ -157,7 +147,7 @@ export class InventoryService {
     return inventory;
   }
 
-  async update(id: string, dto: UpdateInventoryDto, userId?: string, userContext?: UserContext): Promise<Inventory> {
+  async update(id: string, dto: UpdateInventoryDto, userId: string, userContext?: UserContext): Promise<Inventory> {
     const inventory = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -218,11 +208,11 @@ export class InventoryService {
     }
 
     Object.assign(inventory, dto);
-    inventory.updated_by = this.getAuditUserId(userId);
+    inventory.updated_by = userId;
     return this.inventoryRepository.save(inventory);
   }
 
-  async remove(id: string, userId?: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
     const inventory = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -241,13 +231,14 @@ export class InventoryService {
       );
     }
 
-    await this.inventoryRepository.softDelete({ id });
-    inventory.deleted_by = this.getAuditUserId(userId);
-    await this.inventoryRepository.save(inventory);
+    await this.inventoryRepository.update({ id }, {
+      deleted_at: new Date(),
+      deleted_by: userId,
+    });
     return { id, deleted: true };
   }
 
-  async adjustQuantity(id: string, adjustment: number, userId?: string, userContext?: UserContext): Promise<Inventory> {
+  async adjustQuantity(id: string, adjustment: number, userId: string, userContext?: UserContext): Promise<Inventory> {
     const inventory = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -265,12 +256,11 @@ export class InventoryService {
     }
 
     inventory.current_quantity = newQuantity;
-    inventory.updated_by = this.getAuditUserId(userId);
+    inventory.updated_by = userId;
     return this.inventoryRepository.save(inventory);
   }
 
   async transfer(dto: TransferDto, userId: string, userContext?: UserContext): Promise<any> {
-    const auditUserId = this.getAuditUserId(userId);
 
     if (userContext && this.isSecretaria(userContext.role)) {
       const isInvolved = dto.origin_branch_id === userContext.branch_id || 
@@ -344,7 +334,7 @@ export class InventoryService {
       const previousOriginQuantity = originInventory[0].current_quantity;
       await queryRunner.query(
         'UPDATE inventory SET current_quantity = current_quantity - $1, updated_by = $2 WHERE id = $3',
-        [dto.quantity, auditUserId, originInventory[0].id]
+        [dto.quantity, userId, originInventory[0].id]
       );
 
       const destinationInventory = await queryRunner.query(
@@ -357,19 +347,19 @@ export class InventoryService {
         previousDestinationQuantity = destinationInventory[0].current_quantity;
         await queryRunner.query(
           'UPDATE inventory SET current_quantity = current_quantity + $1, updated_by = $2 WHERE id = $3',
-          [dto.quantity, auditUserId, destinationInventory[0].id]
+          [dto.quantity, userId, destinationInventory[0].id]
         );
       } else {
         await queryRunner.query(
           'INSERT INTO inventory (id, branch_id, supply_id, current_quantity, minimum_stock, created_by, updated_by) VALUES (gen_random_uuid(), $1, $2, $3, 0, $4, $4)',
-          [dto.destination_branch_id, dto.supply_id, dto.quantity, auditUserId]
+          [dto.destination_branch_id, dto.supply_id, dto.quantity, userId]
         );
       }
 
       const transferId = crypto.randomUUID();
       await queryRunner.query(
         'INSERT INTO stock_transfer (id, idempotency_key, origin_branch_id, destination_branch_id, supply_id, quantity, status, request_date, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)',
-        [transferId, idempotencyKey, dto.origin_branch_id, dto.destination_branch_id, dto.supply_id, dto.quantity, StockTransferStatus.Received, auditUserId]
+        [transferId, idempotencyKey, dto.origin_branch_id, dto.destination_branch_id, dto.supply_id, dto.quantity, StockTransferStatus.Received, userId]
       );
 
       await queryRunner.commitTransaction();

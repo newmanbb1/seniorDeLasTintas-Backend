@@ -37,7 +37,7 @@ import { UserRole } from "../auth/entities/user.entity";
 function getUserContext(user: any): UserContext | undefined {
   if (!user) return undefined;
   return {
-    userId: user.sub || user.id,
+    userId: user.id,
     role: user.role,
     branch_id: user.branch_id,
   };
@@ -59,7 +59,7 @@ export class InventoryController {
   @ApiCreatedWrapped()
   async create(@Body() createInventoryDto: CreateInventoryDto, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.inventoryService.create(createInventoryDto, user?.sub, userContext));
+    return ok(await this.inventoryService.create(createInventoryDto, user?.id, userContext));
   }
 
   @Post('transfer')
@@ -69,7 +69,7 @@ export class InventoryController {
   @ApiOkWrapped()
   async transfer(@Body() transferDto: TransferDto, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.inventoryService.transfer(transferDto, user?.sub, userContext));
+    return ok(await this.inventoryService.transfer(transferDto, user?.id, userContext));
   }
 
   @Get()
@@ -101,7 +101,7 @@ export class InventoryController {
     @GetUser() user: any,
   ) {
     const userContext = getUserContext(user);
-    return ok(await this.inventoryService.update(id, updateInventoryDto, user?.sub, userContext));
+    return ok(await this.inventoryService.update(id, updateInventoryDto, user?.id, userContext));
   }
 
   @Delete(":id")
@@ -110,7 +110,7 @@ export class InventoryController {
   @ApiOkWrapped()
   async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = getUserContext(user);
-    return ok(await this.inventoryService.remove(id, user?.sub, userContext));
+    return ok(await this.inventoryService.remove(id, user?.id, userContext));
   }
 
   @Patch(":id/adjust")
@@ -123,6 +123,6 @@ export class InventoryController {
     @GetUser() user: any,
   ) {
     const userContext = getUserContext(user);
-    return ok(await this.inventoryService.adjustQuantity(id, adjustment, user?.sub, userContext));
+    return ok(await this.inventoryService.adjustQuantity(id, adjustment, user?.id, userContext));
   }
 }

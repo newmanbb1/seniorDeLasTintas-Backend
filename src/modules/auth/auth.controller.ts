@@ -19,7 +19,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators';
+import { Roles, GetUser } from '../../common/decorators';
 import { UserRole } from './entities/user.entity';
 
 @ApiTags('auth')
@@ -47,8 +47,8 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar nueva secretaria (solo admin)' })
   @ApiBody({ type: RegisterSecretariaDto })
-  async registerSecretaria(@Body() dto: RegisterSecretariaDto) {
-    const result = await this.authService.registerSecretaria(dto);
+  async registerSecretaria(@Body() dto: RegisterSecretariaDto, @GetUser('id') adminUserId: string) {
+    const result = await this.authService.registerSecretaria(dto, adminUserId);
     return {
       success: true,
       data: result,
@@ -101,7 +101,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar sesión (revocar refresh token)' })
   async logout(@Request() req: any) {
-    const result = await this.authService.logout(req.user.sub);
+    const result = await this.authService.logout(req.user.id);
     return {
       success: true,
       data: result,
@@ -114,7 +114,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener perfil del usuario actual' })
   async getProfile(@Request() req: any) {
-    const result = await this.authService.getProfile(req.user.sub);
+    const result = await this.authService.getProfile(req.user.id);
     return {
       success: true,
       data: result,

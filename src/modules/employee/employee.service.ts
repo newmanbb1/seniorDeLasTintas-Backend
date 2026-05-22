@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Like, Repository } from "typeorm";
 import { Employee } from "./entities/employee.entity";
@@ -30,22 +29,13 @@ export class EmployeeService {
     private readonly branchRepository: Repository<Branch>,
     @InjectRepository(Attendance)
     private readonly attendanceRepository: Repository<Attendance>,
-    private readonly configService: ConfigService,
   ) {}
-
-  private getAuditUserId(userId?: string): string {
-    if (userId) return userId;
-    return (
-      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
-      "00000000-0000-4000-8000-000000000001"
-    );
-  }
 
   private isSecretaria(role: string): boolean {
     return role === UserRole.SECRETARIA;
   }
 
-  async create(dto: CreateEmployeeDto, userId?: string, userContext?: UserContext): Promise<Employee> {
+  async create(dto: CreateEmployeeDto, userId: string, userContext?: UserContext): Promise<Employee> {
     const { full_name, branch_id } = dto;
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -74,7 +64,7 @@ export class EmployeeService {
 
     const employee = this.employeeRepository.create({
       ...dto,
-      created_by: this.getAuditUserId(userId),
+      created_by: userId,
     });
     return this.employeeRepository.save(employee);
   }
@@ -116,7 +106,7 @@ export class EmployeeService {
 
   async findOne(id: string, userContext?: UserContext): Promise<Employee> {
     const employee = await this.employeeRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
       relations: ["branch"],
     });
     if (!employee) {
@@ -132,7 +122,7 @@ export class EmployeeService {
     return employee;
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, userId?: string, userContext?: UserContext): Promise<Employee> {
+  async update(id: string, dto: UpdateEmployeeDto, userId: string, userContext?: UserContext): Promise<Employee> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -165,11 +155,11 @@ export class EmployeeService {
     }
 
     Object.assign(employee, dto);
-    employee.updated_by = this.getAuditUserId(userId);
+    employee.updated_by = userId;
     return this.employeeRepository.save(employee);
   }
 
-  async remove(id: string, userId?: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -185,13 +175,14 @@ export class EmployeeService {
       );
     }
 
-    await this.employeeRepository.softDelete({ id });
-    employee.deleted_by = this.getAuditUserId(userId);
-    await this.employeeRepository.save(employee);
+    await this.employeeRepository.update({ id }, {
+      deleted_at: new Date(),
+      deleted_by: userId,
+    });
     return { id, deleted: true };
   }
 
-  async toggleActive(id: string, userId?: string, userContext?: UserContext): Promise<Employee> {
+  async toggleActive(id: string, userId: string, userContext?: UserContext): Promise<Employee> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
@@ -201,7 +192,7 @@ export class EmployeeService {
     }
 
     employee.active = !employee.active;
-    employee.updated_by = this.getAuditUserId(userId);
+    employee.updated_by = userId;
     return this.employeeRepository.save(employee);
   }
 }

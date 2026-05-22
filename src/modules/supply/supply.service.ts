@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Like, Repository } from "typeorm";
 import { Supply } from "./entities/supply.entity";
@@ -22,18 +21,9 @@ export class SupplyService {
     private readonly inventoryRepository: Repository<Inventory>,
     @InjectRepository(StockTransfer)
     private readonly stockTransferRepository: Repository<StockTransfer>,
-    private readonly configService: ConfigService,
   ) {}
 
-  private getAuditUserId(userId?: string): string {
-    if (userId) return userId;
-    return (
-      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
-      "00000000-0000-4000-8000-000000000001"
-    );
-  }
-
-  async create(dto: CreateSupplyDto, userId?: string): Promise<Supply> {
+  async create(dto: CreateSupplyDto, userId: string): Promise<Supply> {
     const { name } = dto;
 
     const existingSupply = await this.supplyRepository.findOne({
@@ -47,7 +37,7 @@ export class SupplyService {
 
     const supply = this.supplyRepository.create({
       ...dto,
-      created_by: this.getAuditUserId(userId),
+      created_by: userId,
     });
     return this.supplyRepository.save(supply);
   }
@@ -78,7 +68,7 @@ export class SupplyService {
 
   async findOne(id: string): Promise<Supply> {
     const supply = await this.supplyRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
     });
     if (!supply) {
       throw new NotFoundException(`Insumo con ID "${id}" no encontrado`);
@@ -86,7 +76,7 @@ export class SupplyService {
     return supply;
   }
 
-  async update(id: string, dto: UpdateSupplyDto, userId?: string): Promise<Supply> {
+  async update(id: string, dto: UpdateSupplyDto, userId: string): Promise<Supply> {
     const supply = await this.findOne(id);
 
     if (dto.name && dto.name !== supply.name) {
@@ -101,11 +91,11 @@ export class SupplyService {
     }
 
     Object.assign(supply, dto);
-    supply.updated_by = this.getAuditUserId(userId);
+    supply.updated_by = userId;
     return this.supplyRepository.save(supply);
   }
 
-  async remove(id: string, userId?: string): Promise<{ id: string; deleted: true }> {
+  async remove(id: string, userId: string): Promise<{ id: string; deleted: true }> {
     const supply = await this.findOne(id);
 
     const inventoryCount = await this.inventoryRepository.count({
@@ -126,9 +116,10 @@ export class SupplyService {
       );
     }
 
-    await this.supplyRepository.softDelete({ id });
-    supply.deleted_by = this.getAuditUserId(userId);
-    await this.supplyRepository.save(supply);
+    await this.supplyRepository.update({ id }, {
+      deleted_at: new Date(),
+      deleted_by: userId,
+    });
     return { id, deleted: true };
   }
 }

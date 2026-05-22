@@ -57,7 +57,7 @@ export class BranchController {
   @ApiOkWrapped()
   async findAll(@Query() filters:FilterBranch, @GetUser() user: any) {
     const userContext = user ? {
-      userId: user.sub || user.id,
+      userId: user.id,
       role: user.role,
       branch_id: user.branch_id,
     } : undefined;
@@ -70,7 +70,7 @@ export class BranchController {
   @ApiOkWrapped()
   async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = user ? {
-      userId: user.sub || user.id,
+      userId: user.id,
       role: user.role,
       branch_id: user.branch_id,
     } : undefined;

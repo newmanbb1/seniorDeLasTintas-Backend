@@ -49,7 +49,7 @@ export class StockTransferController {
   @ApiCreatedWrapped()
   async create(@Body() createStockTransferDto: CreateStockTransferDto, @GetUser('id') userId: string, @GetUser() user: any) {
     const userContext = user ? {
-      userId: user.sub || user.id,
+      userId: user.id,
       role: user.role,
       branch_id: user.branch_id,
     } : undefined;
@@ -62,7 +62,7 @@ export class StockTransferController {
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterStockTransfer, @GetUser() user: any) {
     const userContext = user ? {
-      userId: user.sub || user.id,
+      userId: user.id,
       role: user.role,
       branch_id: user.branch_id,
     } : undefined;
@@ -75,7 +75,7 @@ export class StockTransferController {
   @ApiOkWrapped()
   async findOne(@Param("id", ParseUUIDPipe) id: string, @GetUser() user: any) {
     const userContext = user ? {
-      userId: user.sub || user.id,
+      userId: user.id,
       role: user.role,
       branch_id: user.branch_id,
     } : undefined;

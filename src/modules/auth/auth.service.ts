@@ -64,7 +64,7 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  async registerSecretaria(dto: RegisterSecretariaDto): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+  async registerSecretaria(dto: RegisterSecretariaDto, adminUserId: string): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -81,7 +81,7 @@ export class AuthService {
       role: UserRole.SECRETARIA,
       branch_id: dto.branch_id,
       active: true,
-      created_by: dto.email,
+      created_by: adminUserId,
     });
     await this.userRepository.save(user);
 
