@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, existsSync, openSync, readSync, closeSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { UploadsService } from './uploads.service';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
@@ -26,6 +26,26 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+
+const MAGIC: Record<string, (buffer: Buffer) => boolean> = {
+  'image/jpeg': (b) => b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF,
+  'image/png': (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47,
+  'image/webp': (b) => b.slice(8, 12).toString() === 'WEBP',
+  'image/gif': (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38,
+  'video/mp4': (b) => b.slice(4, 8).toString() === 'ftyp',
+  'video/webm': (b) => b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3,
+  'video/quicktime': (b) => b.slice(4, 8).toString() === 'ftyp',
+};
+
+function validateFileType(filePath: string, mimetype: string): boolean {
+  const validator = MAGIC[mimetype];
+  if (!validator) return false;
+  const fd = openSync(filePath, 'r');
+  const buffer = Buffer.alloc(12);
+  readSync(fd, buffer, 0, 12, 0);
+  closeSync(fd);
+  return validator(buffer);
+}
 
 @ApiTags('uploads')
 @Controller('uploads')
@@ -53,13 +73,20 @@ export class UploadsController {
     }
 
     if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+      unlinkSync(file.path);
       throw new BadRequestException(
         'Tipo de archivo no permitido. Tipos permitidos: jpeg, png, webp, gif',
       );
     }
 
     if (file.size > MAX_IMAGE_SIZE) {
+      unlinkSync(file.path);
       throw new BadRequestException('El archivo supera el tamaño máximo de 5MB');
+    }
+
+    if (!validateFileType(file.path, file.mimetype)) {
+      unlinkSync(file.path);
+      throw new BadRequestException('El archivo no coincide con el formato esperado');
     }
 
     const filename = file.filename;
@@ -94,13 +121,20 @@ export class UploadsController {
     }
 
     if (!ALLOWED_VIDEO_TYPES.includes(file.mimetype)) {
+      unlinkSync(file.path);
       throw new BadRequestException(
         'Tipo de archivo no permitido. Tipos permitidos: mp4, webm, mov',
       );
     }
 
     if (file.size > MAX_VIDEO_SIZE) {
+      unlinkSync(file.path);
       throw new BadRequestException('El archivo supera el tamaño máximo de 50MB');
+    }
+
+    if (!validateFileType(file.path, file.mimetype)) {
+      unlinkSync(file.path);
+      throw new BadRequestException('El archivo no coincide con el formato esperado');
     }
 
     const filename = file.filename;
@@ -121,7 +155,8 @@ export class UploadsController {
     @Param('filename') filename: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const filePath = join(this.uploadsService.getImagesPath(), filename);
+    const safeName = this.sanitizeFilename(filename);
+    const filePath = join(this.uploadsService.getImagesPath(), safeName);
 
     if (!existsSync(filePath)) {
       throw new BadRequestException('Imagen no encontrada');
@@ -129,8 +164,8 @@ export class UploadsController {
 
     const file = createReadStream(filePath);
     res.set({
-      'Content-Type': this.getMimeType(filename),
-      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Type': this.getMimeType(safeName),
+      'Content-Disposition': `inline; filename="${safeName}"`,
     });
 
     return new StreamableFile(file);
@@ -143,7 +178,8 @@ export class UploadsController {
     @Param('filename') filename: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const filePath = join(this.uploadsService.getVideosPath(), filename);
+    const safeName = this.sanitizeFilename(filename);
+    const filePath = join(this.uploadsService.getVideosPath(), safeName);
 
     if (!existsSync(filePath)) {
       throw new BadRequestException('Video no encontrado');
@@ -151,11 +187,16 @@ export class UploadsController {
 
     const file = createReadStream(filePath);
     res.set({
-      'Content-Type': this.getMimeType(filename),
-      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Type': this.getMimeType(safeName),
+      'Content-Disposition': `inline; filename="${safeName}"`,
     });
 
     return new StreamableFile(file);
+  }
+
+  private sanitizeFilename(filename: string): string {
+    const base = filename.replace(/\.\./g, '').replace(/[\/\\]/g, '');
+    return base || '_';
   }
 
   private getMimeType(filename: string): string {

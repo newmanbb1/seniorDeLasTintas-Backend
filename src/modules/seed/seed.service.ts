@@ -134,9 +134,9 @@ export class SeedService {
     await this.inventoryRepository.delete({});
     await this.employeeRepository.delete({});
     await this.supplyRepository.delete({});
-    await this.branchRepository.delete({});
     await this.refreshTokenRepository.delete({});
     await this.userRepository.delete({});
+    await this.branchRepository.delete({});
   }
 
   private async seedAdmin(): Promise<string | null> {

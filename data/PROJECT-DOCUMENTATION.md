@@ -115,6 +115,7 @@ src/
 | Tipo | Método de Login | Acceso |
 |------|-----------------|--------|
 | **Admin** | Email + Password (JWT) | Panel administrativo completo |
+| **Secretaria** | Email + Password (JWT) | Solo su sucursal asignada |
 | **Empleado** | Solo PIN (JWT limitado) | Solo check-in/check-out |
 
 ### Flujo de Login Admin
@@ -181,6 +182,7 @@ src/
 ```json
 {
   "sub": "uuid-del-usuario",
+  "id": "uuid-del-usuario",
   "email": "admin@email.com",
   "role": "admin",
   "type": "access",
@@ -193,6 +195,7 @@ src/
 ```json
 {
   "sub": "uuid-del-usuario",
+  "id": "uuid-del-usuario",
   "email": "admin@email.com",
   "role": "admin",
   "type": "refresh"
@@ -249,6 +252,10 @@ fetch('/branch', {
 > - `created_at`, `created_by`
 > - `updated_at`, `updated_by`
 > - `deleted_at`, `deleted_by` (soft delete)
+>
+> **Soft Delete:** El borrado lógico se realiza con `update({ id }, { deleted_at: new Date(), deleted_by: userId })` atómico. NO se usa `softDelete() + save()` porque `save()` sobrescribe `deleted_at` con `null`.
+>
+> **Auditoría:** Todos los servicios reciben `userId: string` directamente del JWT (`@GetUser('id')`) y lo escriben en los campos `created_by`/`updated_by`/`deleted_by`. Única excepción: check-in/check-out (público) usan `SYSTEM_AUDIT_USER_ID`.
 
 ---
 
@@ -689,7 +696,7 @@ Authorization: Bearer <admin_token>
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
 | GET | `/api/seed/status` | Verificar estado de la BD | ❌ Público |
-| POST | `/api/seed` | Ejecutar seed (inserta datos) | ❌ Público |
+| POST | `/api/seed/all` | Ejecutar seed (inserta datos) | ❌ Público |
 | POST | `/api/seed/reset` | Limpiar datos y reinstallar | ❌ Público |
 
 ---
@@ -903,6 +910,15 @@ POST /api/inventory/transfer
 **Formatos permitidos:**
 - Imágenes: jpg, jpeg, png, webp, gif
 - Videos: mp4, webm, mov
+
+**Medidas de seguridad en subidas:**
+
+| Protección | Descripción |
+|------------|-------------|
+| **Magic bytes** | Valida los primeros bytes del archivo (JPEG: `FF D8 FF`, PNG: `89 50 4E 47`, etc.) después de escribir a disco. Rechaza archivos con extensión falsa. |
+| **Extensión por mimetype** | El nombre guardado usa un mapa `mimetype → extensión` (ej: `image/jpeg` → `.jpg`), NO `extname(originalname)`. |
+| **Multer fileFilter** | Rechazo temprano por mimetype inválido antes de escribir a disco. |
+| **Path traversal** | En GET, se sanitiza el filename eliminando `..` y `/` para evitar lectura de archivos fuera del directorio. |
 
 **Subir imagen (Headers requeridos):**
 ```
@@ -1663,13 +1679,13 @@ console.log(branches); // Array de sucursales
 
 ```bash
 # 1. Verificar estado
-GET /seed/status
+GET /api/seed/status
 
 # 2. Ejecutar seed
-POST /seed/all
+POST /api/seed/all
 
 # 3. Hacer login
-POST /auth/login
+POST /api/auth/login
 Body: { "email": "admin@senordelastintas.com", "password": "admin123" }
 ```
 
