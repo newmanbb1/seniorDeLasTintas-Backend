@@ -4,17 +4,20 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Like, Repository } from "typeorm";
-import { StockTransfer, StockTransferStatus } from "./entities/stock-transfer.entity";
-import { Branch } from "../branch/entities/branch.entity";
-import { Supply } from "../supply/entities/supply.entity";
-import { Inventory } from "../inventory/entities/inventory.entity";
-import { CreateStockTransferDto } from "./dto/create-stock-transfer.dto";
-import { UpdateStockTransferDto } from "./dto/update-stock-transfer.dto";
-import { FilterStockTransfer } from "./dto/filter-stock-transfer.dto";
-import { UserRole } from "../auth/entities/user.entity";
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Like, Repository } from 'typeorm';
+import {
+  StockTransfer,
+  StockTransferStatus,
+} from './entities/stock-transfer.entity';
+import { Branch } from '../branch/entities/branch.entity';
+import { Supply } from '../supply/entities/supply.entity';
+import { Inventory } from '../inventory/entities/inventory.entity';
+import { CreateStockTransferDto } from './dto/create-stock-transfer.dto';
+import { UpdateStockTransferDto } from './dto/update-stock-transfer.dto';
+import { FilterStockTransfer } from './dto/filter-stock-transfer.dto';
+import { UserRole } from '../auth/entities/user.entity';
 
 export interface UserContext {
   userId: string;
@@ -39,20 +42,28 @@ export class StockTransferService {
     return role === UserRole.SECRETARIA;
   }
 
-  async create(dto: CreateStockTransferDto, userId: string, userContext?: UserContext): Promise<StockTransfer> {
-    const { origin_branch_id, destination_branch_id, supply_id, quantity } = dto;
+  async create(
+    dto: CreateStockTransferDto,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<StockTransfer> {
+    const { origin_branch_id, destination_branch_id, supply_id, quantity } =
+      dto;
 
     if (userContext && this.isSecretaria(userContext.role)) {
-      const isInvolved = origin_branch_id === userContext.branch_id || 
-                         destination_branch_id === userContext.branch_id;
+      const isInvolved =
+        origin_branch_id === userContext.branch_id ||
+        destination_branch_id === userContext.branch_id;
       if (!isInvolved) {
-        throw new ForbiddenException('Tu transferencia debe involucrar tu sucursal');
+        throw new ForbiddenException(
+          'Tu transferencia debe involucrar tu sucursal',
+        );
       }
     }
 
     if (origin_branch_id === destination_branch_id) {
       throw new BadRequestException(
-        "La sucursal de origen y destino no pueden ser iguales.",
+        'La sucursal de origen y destino no pueden ser iguales.',
       );
     }
 
@@ -109,7 +120,10 @@ export class StockTransferService {
   async findAll(
     filters: FilterStockTransfer,
     userContext?: UserContext,
-  ): Promise<{ data: StockTransfer[]; meta: { total: number; limit: number; offset: number } }> {
+  ): Promise<{
+    data: StockTransfer[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
     const {
       limit = 10,
       offset = 0,
@@ -121,7 +135,11 @@ export class StockTransferService {
 
     const where: any = { deleted_at: IsNull() };
 
-    if (userContext && this.isSecretaria(userContext.role) && userContext.branch_id) {
+    if (
+      userContext &&
+      this.isSecretaria(userContext.role) &&
+      userContext.branch_id
+    ) {
       where.origin_branch = { id: userContext.branch_id };
       where.destination_branch = { id: userContext.branch_id };
     } else {
@@ -141,10 +159,10 @@ export class StockTransferService {
 
     const [data, total] = await this.stockTransferRepository.findAndCount({
       where,
-      relations: ["origin_branch", "destination_branch", "supply"],
+      relations: ['origin_branch', 'destination_branch', 'supply'],
       take: limit,
       skip: offset,
-      order: { request_date: "DESC" },
+      order: { request_date: 'DESC' },
     });
 
     return { data, meta: { total, limit, offset } };
@@ -153,24 +171,33 @@ export class StockTransferService {
   async findOne(id: string, userContext?: UserContext): Promise<StockTransfer> {
     const stockTransfer = await this.stockTransferRepository.findOne({
       where: { id, deleted_at: IsNull() },
-      relations: ["origin_branch", "destination_branch", "supply"],
+      relations: ['origin_branch', 'destination_branch', 'supply'],
     });
     if (!stockTransfer) {
       throw new NotFoundException(`Traspaso con ID "${id}" no encontrado`);
     }
 
-    if (userContext && this.isSecretaria(userContext.role) && userContext.branch_id) {
-      const isInvolved = stockTransfer.origin_branch.id === userContext.branch_id || 
-                         stockTransfer.destination_branch.id === userContext.branch_id;
+    if (
+      userContext &&
+      this.isSecretaria(userContext.role) &&
+      userContext.branch_id
+    ) {
+      const isInvolved =
+        stockTransfer.origin_branch.id === userContext.branch_id ||
+        stockTransfer.destination_branch.id === userContext.branch_id;
       if (!isInvolved) {
-        throw new ForbiddenException("No tienes acceso a este traspaso");
+        throw new ForbiddenException('No tienes acceso a este traspaso');
       }
     }
 
     return stockTransfer;
   }
 
-  async update(id: string, dto: UpdateStockTransferDto, userId: string): Promise<StockTransfer> {
+  async update(
+    id: string,
+    dto: UpdateStockTransferDto,
+    userId: string,
+  ): Promise<StockTransfer> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status !== StockTransferStatus.InTransit) {
@@ -247,7 +274,10 @@ export class StockTransferService {
     return this.stockTransferRepository.save(stockTransfer);
   }
 
-  async remove(id: string, userId: string): Promise<{ id: string; deleted: true }> {
+  async remove(
+    id: string,
+    userId: string,
+  ): Promise<{ id: string; deleted: true }> {
     const stockTransfer = await this.findOne(id);
 
     if (stockTransfer.status === StockTransferStatus.InTransit) {
@@ -256,10 +286,13 @@ export class StockTransferService {
       );
     }
 
-    await this.stockTransferRepository.update({ id }, {
-      deleted_at: new Date(),
-      deleted_by: userId,
-    });
+    await this.stockTransferRepository.update(
+      { id },
+      {
+        deleted_at: new Date(),
+        deleted_by: userId,
+      },
+    );
     return { id, deleted: true };
   }
 }

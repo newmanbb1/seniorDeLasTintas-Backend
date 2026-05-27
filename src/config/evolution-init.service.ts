@@ -11,15 +11,18 @@ export class EvolutionInitService implements OnModuleInit {
   private readonly retryDelay = 3000;
 
   constructor(private readonly configService: ConfigService) {
-    const evolutionUrl = this.configService.get<string>('EVOLUTION_URL') || 'http://evolution:8080';
+    const evolutionUrl =
+      this.configService.get<string>('EVOLUTION_URL') ||
+      'http://evolution:8080';
     const apiKey = this.configService.get<string>('EVOLUTION_API_KEY') || '';
-    this.instanceName = this.configService.get<string>('INSTANCE_NAME') || 'senorbot';
+    this.instanceName =
+      this.configService.get<string>('INSTANCE_NAME') || 'senorbot';
 
     this.client = axios.create({
       baseURL: evolutionUrl,
       headers: {
         'Content-Type': 'application/json',
-        'apikey': apiKey,
+        apikey: apiKey,
       },
       timeout: 15000,
     });
@@ -38,7 +41,9 @@ export class EvolutionInitService implements OnModuleInit {
         this.logger.log('Evolution API disponible');
         return;
       } catch (error) {
-        this.logger.log(`Esperando Evolution API... (intento ${i + 1}/${this.maxRetries})`);
+        this.logger.log(
+          `Esperando Evolution API... (intento ${i + 1}/${this.maxRetries})`,
+        );
         await this.delay(this.retryDelay);
       }
     }
@@ -61,7 +66,9 @@ export class EvolutionInitService implements OnModuleInit {
     try {
       this.logger.log(`Verificando instancia: ${this.instanceName}`);
 
-      const state = await this.client.get<{ instance: { state: string } }>(`/instance/connectionState/${this.instanceName}`);
+      const state = await this.client.get<{ instance: { state: string } }>(
+        `/instance/connectionState/${this.instanceName}`,
+      );
 
       if (state.data.instance?.state === 'open') {
         this.logger.log(`Instancia ${this.instanceName} ya está conectada`);
@@ -70,7 +77,9 @@ export class EvolutionInitService implements OnModuleInit {
       }
 
       if (state.data.instance?.state === 'close') {
-        this.logger.warn(`Instancia ${this.instanceName} existe pero está desconectada. Escanea el QR en el panel de Evolution API`);
+        this.logger.warn(
+          `Instancia ${this.instanceName} existe pero está desconectada. Escanea el QR en el panel de Evolution API`,
+        );
         return;
       }
     } catch (error: any) {
@@ -93,35 +102,46 @@ export class EvolutionInitService implements OnModuleInit {
         qrCode: true,
       });
 
-      this.logger.log(`Instancia ${this.instanceName} creada. Escanea el QR en el panel de Evolution API`);
-      
+      this.logger.log(
+        `Instancia ${this.instanceName} creada. Escanea el QR en el panel de Evolution API`,
+      );
+
       await this.delay(2000);
       await this.configureWebhook();
     } catch (error: any) {
-      this.logger.error(`Error creando instancia: ${error.response?.data || error.message}`);
+      this.logger.error(
+        `Error creando instancia: ${error.response?.data || error.message}`,
+      );
     }
   }
 
   private async configureWebhook() {
     try {
       const webhookUrl = `http://backend:3000/api/chatbot/webhook`;
-      
+
       await this.client.post(`/webhook/set/${this.instanceName}`, {
         webhook: {
           enabled: true,
           url: webhookUrl,
           byEvents: false,
-          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CHATS_UPDATE', 'CONNECTION_UPDATE']
-        }
+          events: [
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+            'CHATS_UPDATE',
+            'CONNECTION_UPDATE',
+          ],
+        },
       });
 
       this.logger.log(`Webhook configurado para ${this.instanceName}`);
     } catch (error: any) {
-      this.logger.error(`Error configurando webhook: ${error.response?.data || error.message}`);
+      this.logger.error(
+        `Error configurando webhook: ${error.response?.data || error.message}`,
+      );
     }
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

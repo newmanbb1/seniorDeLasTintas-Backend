@@ -12,28 +12,49 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { createReadStream, existsSync, openSync, readSync, closeSync, unlinkSync } from 'fs';
+import {
+  createReadStream,
+  existsSync,
+  openSync,
+  readSync,
+  closeSync,
+  unlinkSync,
+} from 'fs';
 import { join } from 'path';
 import { UploadsService } from './uploads.service';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators';
 import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import { UserRole } from '../auth/entities/user.entity';
 
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+];
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
 
 const MAGIC: Record<string, (buffer: Buffer) => boolean> = {
-  'image/jpeg': (b) => b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF,
-  'image/png': (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47,
+  'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) =>
+    b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
   'image/webp': (b) => b.slice(8, 12).toString() === 'WEBP',
-  'image/gif': (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38,
+  'image/gif': (b) =>
+    b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38,
   'video/mp4': (b) => b.slice(4, 8).toString() === 'ftyp',
-  'video/webm': (b) => b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3,
+  'video/webm': (b) =>
+    b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3,
   'video/quicktime': (b) => b.slice(4, 8).toString() === 'ftyp',
 };
 
@@ -81,12 +102,16 @@ export class UploadsController {
 
     if (file.size > MAX_IMAGE_SIZE) {
       unlinkSync(file.path);
-      throw new BadRequestException('El archivo supera el tamaño máximo de 5MB');
+      throw new BadRequestException(
+        'El archivo supera el tamaño máximo de 5MB',
+      );
     }
 
     if (!validateFileType(file.path, file.mimetype)) {
       unlinkSync(file.path);
-      throw new BadRequestException('El archivo no coincide con el formato esperado');
+      throw new BadRequestException(
+        'El archivo no coincide con el formato esperado',
+      );
     }
 
     const filename = file.filename;
@@ -129,12 +154,16 @@ export class UploadsController {
 
     if (file.size > MAX_VIDEO_SIZE) {
       unlinkSync(file.path);
-      throw new BadRequestException('El archivo supera el tamaño máximo de 50MB');
+      throw new BadRequestException(
+        'El archivo supera el tamaño máximo de 50MB',
+      );
     }
 
     if (!validateFileType(file.path, file.mimetype)) {
       unlinkSync(file.path);
-      throw new BadRequestException('El archivo no coincide con el formato esperado');
+      throw new BadRequestException(
+        'El archivo no coincide con el formato esperado',
+      );
     }
 
     const filename = file.filename;

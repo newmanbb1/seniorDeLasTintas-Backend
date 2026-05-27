@@ -1,7 +1,10 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { WhatsAppSession, WhatsAppFlowState } from "../entities/whatsapp-session.entity";
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  WhatsAppSession,
+  WhatsAppFlowState,
+} from '../entities/whatsapp-session.entity';
 
 @Injectable()
 export class WhatsAppSessionService {
@@ -10,7 +13,10 @@ export class WhatsAppSessionService {
     private readonly sessionRepository: Repository<WhatsAppSession>,
   ) {}
 
-  async getOrCreateSession(phoneNumber: string, profileName?: string): Promise<WhatsAppSession> {
+  async getOrCreateSession(
+    phoneNumber: string,
+    profileName?: string,
+  ): Promise<WhatsAppSession> {
     let session = await this.sessionRepository.findOne({
       where: { phone_number: phoneNumber },
     });
@@ -31,7 +37,10 @@ export class WhatsAppSessionService {
     return session;
   }
 
-  async updateFlowState(phoneNumber: string, newState: WhatsAppFlowState): Promise<WhatsAppSession> {
+  async updateFlowState(
+    phoneNumber: string,
+    newState: WhatsAppFlowState,
+  ): Promise<WhatsAppSession> {
     const session = await this.getOrCreateSession(phoneNumber);
     session.flow_state = newState;
     session.last_interaction = new Date();
@@ -54,7 +63,7 @@ export class WhatsAppSessionService {
 
     return this.sessionRepository.find({
       where: {
-        last_interaction: require("typeorm").MoreThan(cutoff),
+        last_interaction: require('typeorm').MoreThan(cutoff),
       },
     });
   }

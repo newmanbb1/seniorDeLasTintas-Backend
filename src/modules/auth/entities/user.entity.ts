@@ -1,39 +1,39 @@
-import { BaseEntity } from "src/common/entities/BaseEntity";
-import { Branch } from "src/modules/branch/entities/branch.entity";
-import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from "typeorm";
+import { BaseEntity } from 'src/common/entities/BaseEntity';
+import { Branch } from 'src/modules/branch/entities/branch.entity';
+import { Column, Entity, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
 
 export enum UserRole {
   ADMIN = 'admin',
   SECRETARIA = 'secretaria',
 }
 
-@Entity("user")
+@Entity('user')
 @Unique(['email'])
 export class User extends BaseEntity {
   @Index()
-  @Column({ type: "varchar", length: 255 })
+  @Column({ type: 'varchar', length: 255 })
   email: string;
 
-  @Column({ type: "varchar", length: 255 })
+  @Column({ type: 'varchar', length: 255 })
   password: string;
 
-  @Column({ type: "varchar", length: 255 })
+  @Column({ type: 'varchar', length: 255 })
   full_name: string;
 
-  @Column({ type: "enum", enum: UserRole, default: UserRole.ADMIN })
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.ADMIN })
   role: UserRole;
 
-  @Column({ type: "boolean", default: true })
+  @Column({ type: 'boolean', default: true })
   active: boolean;
 
   @ManyToOne(() => Branch, (branch) => branch.id, {
-    onDelete: "RESTRICT",
+    onDelete: 'RESTRICT',
     nullable: true,
   })
-  @JoinColumn({ name: "branch_id" })
+  @JoinColumn({ name: 'branch_id' })
   @Index()
   branch: Branch;
 
-  @Column({ type: "uuid", nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   branch_id: string;
 }

@@ -3,16 +3,16 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Like, Repository } from "typeorm";
-import { Employee } from "./entities/employee.entity";
-import { Branch } from "../branch/entities/branch.entity";
-import { Attendance } from "../attendance/entities/attendance.entity";
-import { CreateEmployeeDto } from "./dto/create-employee.dto";
-import { UpdateEmployeeDto } from "./dto/update-employee.dto";
-import { FilterEmployee } from "./dto/filter-employee.dto";
-import { UserRole } from "../auth/entities/user.entity";
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Like, Repository } from 'typeorm';
+import { Employee } from './entities/employee.entity';
+import { Branch } from '../branch/entities/branch.entity';
+import { Attendance } from '../attendance/entities/attendance.entity';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { FilterEmployee } from './dto/filter-employee.dto';
+import { UserRole } from '../auth/entities/user.entity';
 
 export interface UserContext {
   userId: string;
@@ -35,12 +35,18 @@ export class EmployeeService {
     return role === UserRole.SECRETARIA;
   }
 
-  async create(dto: CreateEmployeeDto, userId: string, userContext?: UserContext): Promise<Employee> {
+  async create(
+    dto: CreateEmployeeDto,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<Employee> {
     const { full_name, branch_id } = dto;
 
     if (userContext && this.isSecretaria(userContext.role)) {
       if (branch_id !== userContext.branch_id) {
-        throw new ForbiddenException('Solo puedes crear empleados para tu sucursal');
+        throw new ForbiddenException(
+          'Solo puedes crear empleados para tu sucursal',
+        );
       }
     }
 
@@ -72,9 +78,18 @@ export class EmployeeService {
   async findAll(
     filters: FilterEmployee,
     userContext?: UserContext,
-  ): Promise<{ data: Employee[]; meta: { total: number; limit: number; offset: number } }> {
-    const { limit = 10, offset = 0, full_name, position, branch_id, active } =
-      filters;
+  ): Promise<{
+    data: Employee[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const {
+      limit = 10,
+      offset = 0,
+      full_name,
+      position,
+      branch_id,
+      active,
+    } = filters;
 
     const where: any = { deleted_at: IsNull() };
 
@@ -95,10 +110,10 @@ export class EmployeeService {
 
     const [data, total] = await this.employeeRepository.findAndCount({
       where,
-      relations: ["branch"],
+      relations: ['branch'],
       take: limit,
       skip: offset,
-      order: { created_at: "DESC" },
+      order: { created_at: 'DESC' },
     });
 
     return { data, meta: { total, limit, offset } };
@@ -107,7 +122,7 @@ export class EmployeeService {
   async findOne(id: string, userContext?: UserContext): Promise<Employee> {
     const employee = await this.employeeRepository.findOne({
       where: { id, deleted_at: IsNull() },
-      relations: ["branch"],
+      relations: ['branch'],
     });
     if (!employee) {
       throw new NotFoundException(`Empleado con ID "${id}" no encontrado`);
@@ -122,13 +137,20 @@ export class EmployeeService {
     return employee;
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, userId: string, userContext?: UserContext): Promise<Employee> {
+  async update(
+    id: string,
+    dto: UpdateEmployeeDto,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<Employee> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
       const newBranchId = dto.branch_id || employee.branch.id;
       if (newBranchId !== userContext.branch_id) {
-        throw new ForbiddenException('Solo puedes modificar empleados de tu sucursal');
+        throw new ForbiddenException(
+          'Solo puedes modificar empleados de tu sucursal',
+        );
       }
     }
 
@@ -159,11 +181,17 @@ export class EmployeeService {
     return this.employeeRepository.save(employee);
   }
 
-  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+  async remove(
+    id: string,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<{ id: string; deleted: true }> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
-      throw new ForbiddenException('Las secretarias no pueden eliminar empleados');
+      throw new ForbiddenException(
+        'Las secretarias no pueden eliminar empleados',
+      );
     }
 
     const attendanceCount = await this.attendanceRepository.count({
@@ -175,19 +203,28 @@ export class EmployeeService {
       );
     }
 
-    await this.employeeRepository.update({ id }, {
-      deleted_at: new Date(),
-      deleted_by: userId,
-    });
+    await this.employeeRepository.update(
+      { id },
+      {
+        deleted_at: new Date(),
+        deleted_by: userId,
+      },
+    );
     return { id, deleted: true };
   }
 
-  async toggleActive(id: string, userId: string, userContext?: UserContext): Promise<Employee> {
+  async toggleActive(
+    id: string,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<Employee> {
     const employee = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
       if (employee.branch.id !== userContext.branch_id) {
-        throw new ForbiddenException('Solo puedes activar/desactivar empleados de tu sucursal');
+        throw new ForbiddenException(
+          'Solo puedes activar/desactivar empleados de tu sucursal',
+        );
       }
     }
 

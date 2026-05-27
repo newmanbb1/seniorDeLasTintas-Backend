@@ -1,32 +1,32 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsString, IsOptional } from "class-validator";
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsOptional } from 'class-validator';
 
 export class WebhookMessageDto {
-  @ApiProperty({ description: "Número de teléfono del remitente" })
+  @ApiProperty({ description: 'Número de teléfono del remitente' })
   @IsString()
   from: string;
 
-  @ApiProperty({ description: "Nombre del contacto en WhatsApp" })
+  @ApiProperty({ description: 'Nombre del contacto en WhatsApp' })
   @IsOptional()
   @IsString()
   pushName?: string;
 
-  @ApiProperty({ description: "Mensaje recibido" })
+  @ApiProperty({ description: 'Mensaje recibido' })
   @IsString()
   message: string;
 
-  @ApiProperty({ description: "ID del mensaje" })
+  @ApiProperty({ description: 'ID del mensaje' })
   @IsOptional()
   @IsString()
   messageId?: string;
 }
 
 export class EvolutionWebhookDto {
-  @ApiProperty({ description: "Evento recibido" })
+  @ApiProperty({ description: 'Evento recibido' })
   @IsString()
   event: string;
 
-  @ApiProperty({ description: "Datos del mensaje" })
+  @ApiProperty({ description: 'Datos del mensaje' })
   @IsOptional()
   data: {
     key?: {

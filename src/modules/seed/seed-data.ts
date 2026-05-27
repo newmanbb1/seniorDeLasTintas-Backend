@@ -45,8 +45,16 @@ export const seedSupplies = [
   { name: 'Tinta Amarilla', category: 'Tintas', unit_of_measure: 'litros' },
   { name: 'Resma Papel A4', category: 'Papel', unit_of_measure: 'unidades' },
   { name: 'Resma Papel Carta', category: 'Papel', unit_of_measure: 'unidades' },
-  { name: 'Cabezal Impresora', category: 'Repuestos', unit_of_measure: 'unidades' },
-  { name: 'Rodillo de Alimentación', category: 'Repuestos', unit_of_measure: 'unidades' },
+  {
+    name: 'Cabezal Impresora',
+    category: 'Repuestos',
+    unit_of_measure: 'unidades',
+  },
+  {
+    name: 'Rodillo de Alimentación',
+    category: 'Repuestos',
+    unit_of_measure: 'unidades',
+  },
   { name: 'Toner HP 85A', category: 'Toner', unit_of_measure: 'unidades' },
   { name: 'Toner Canon 337', category: 'Toner', unit_of_measure: 'unidades' },
 ];

@@ -25,11 +25,7 @@ import { Attendance } from '../attendance/entities/attendance.entity';
     ]),
   ],
   controllers: [ChatbotController],
-  providers: [
-    ChatbotService,
-    EvolutionApiService,
-    WhatsAppSessionService,
-  ],
+  providers: [ChatbotService, EvolutionApiService, WhatsAppSessionService],
   exports: [ChatbotService],
 })
 export class ChatbotModule {}

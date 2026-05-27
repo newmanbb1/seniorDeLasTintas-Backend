@@ -8,8 +8,14 @@ import { Branch } from '../branch/entities/branch.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { Supply } from '../supply/entities/supply.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
-import { StockTransfer, StockTransferStatus } from '../stock-transfer/entities/stock-transfer.entity';
-import { Attendance, AttendanceEntryStatus } from '../attendance/entities/attendance.entity';
+import {
+  StockTransfer,
+  StockTransferStatus,
+} from '../stock-transfer/entities/stock-transfer.entity';
+import {
+  Attendance,
+  AttendanceEntryStatus,
+} from '../attendance/entities/attendance.entity';
 import {
   seedAdmin,
   seedSecretarias,
@@ -87,7 +93,11 @@ export class SeedService {
     const inventories = await this.seedInventory(adminId, branches, supplies);
     result.inventories = inventories.length;
 
-    const transfers = await this.seedStockTransfers(adminId, branches, supplies);
+    const transfers = await this.seedStockTransfers(
+      adminId,
+      branches,
+      supplies,
+    );
     result.transfers = transfers.length;
 
     const attendances = await this.seedAttendances(adminId, employees);
@@ -105,12 +115,24 @@ export class SeedService {
   }
 
   async getStatus(): Promise<{ message: string; data: any }> {
-    const users = await this.userRepository.count({ where: { deleted_at: IsNull() } });
-    const branches = await this.branchRepository.count({ where: { deleted_at: IsNull() } });
-    const supplies = await this.supplyRepository.count({ where: { deleted_at: IsNull() } });
-    const employees = await this.employeeRepository.count({ where: { deleted_at: IsNull() } });
-    const inventories = await this.inventoryRepository.count({ where: { deleted_at: IsNull() } });
-    const transfers = await this.stockTransferRepository.count({ where: { deleted_at: IsNull() } });
+    const users = await this.userRepository.count({
+      where: { deleted_at: IsNull() },
+    });
+    const branches = await this.branchRepository.count({
+      where: { deleted_at: IsNull() },
+    });
+    const supplies = await this.supplyRepository.count({
+      where: { deleted_at: IsNull() },
+    });
+    const employees = await this.employeeRepository.count({
+      where: { deleted_at: IsNull() },
+    });
+    const inventories = await this.inventoryRepository.count({
+      where: { deleted_at: IsNull() },
+    });
+    const transfers = await this.stockTransferRepository.count({
+      where: { deleted_at: IsNull() },
+    });
     const attendances = await this.attendanceRepository.count();
 
     return {
@@ -155,19 +177,22 @@ export class SeedService {
       full_name: seedAdmin.full_name,
       role: UserRole.ADMIN,
       active: true,
-      created_by: "00000000-0000-0000-0000-000000000001",
+      created_by: '00000000-0000-0000-0000-000000000001',
     });
 
     const saved = await this.userRepository.save(admin);
     return saved.id;
   }
 
-  private async seedSecretarias(adminId: string, branches: Branch[]): Promise<User[]> {
+  private async seedSecretarias(
+    adminId: string,
+    branches: Branch[],
+  ): Promise<User[]> {
     const secretarias: User[] = [];
 
     for (let i = 0; i < seedSecretarias.length; i++) {
       const secretariaData = seedSecretarias[i];
-      
+
       const existing = await this.userRepository.findOne({
         where: { email: secretariaData.email, deleted_at: IsNull() },
       });
@@ -178,9 +203,9 @@ export class SeedService {
       }
 
       const hashedPassword = await bcrypt.hash(secretariaData.password, 10);
-      
+
       const branch = branches[i] || branches[0];
-      
+
       const secretaria = this.userRepository.create({
         email: secretariaData.email,
         password: hashedPassword,
@@ -248,7 +273,10 @@ export class SeedService {
     return supplies;
   }
 
-  private async seedEmployees(adminId: string, branches: Branch[]): Promise<Employee[]> {
+  private async seedEmployees(
+    adminId: string,
+    branches: Branch[],
+  ): Promise<Employee[]> {
     const employees: Employee[] = [];
 
     for (let i = 0; i < seedEmployees.length; i++) {
@@ -353,7 +381,10 @@ export class SeedService {
     return transfers;
   }
 
-  private async seedAttendances(adminId: string, employees: Employee[]): Promise<Attendance[]> {
+  private async seedAttendances(
+    adminId: string,
+    employees: Employee[],
+  ): Promise<Attendance[]> {
     const attendances: Attendance[] = [];
 
     for (const employee of employees.slice(0, 3)) {
@@ -379,7 +410,7 @@ export class SeedService {
           check_in: checkIn,
           check_out: checkOut,
           check_in_status: status,
-          hours_worked: ((17 - checkInHour) + (60 - 30) / 60).toFixed(2),
+          hours_worked: (17 - checkInHour + (60 - 30) / 60).toFixed(2),
           created_by: adminId,
         });
 

@@ -4,18 +4,21 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Repository } from "typeorm";
-import { Attendance, AttendanceEntryStatus } from "./entities/attendance.entity";
-import { Employee } from "../employee/entities/employee.entity";
-import { Branch } from "../branch/entities/branch.entity";
-import { CreateAttendanceDto } from "./dto/create-attendance.dto";
-import { UpdateAttendanceDto } from "./dto/update-attendance.dto";
-import { FilterAttendance } from "./dto/filter-attendance.dto";
-import { CheckOutDto } from "./dto/check-out.dto";
-import { UserRole } from "../auth/entities/user.entity";
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Repository } from 'typeorm';
+import {
+  Attendance,
+  AttendanceEntryStatus,
+} from './entities/attendance.entity';
+import { Employee } from '../employee/entities/employee.entity';
+import { Branch } from '../branch/entities/branch.entity';
+import { CreateAttendanceDto } from './dto/create-attendance.dto';
+import { UpdateAttendanceDto } from './dto/update-attendance.dto';
+import { FilterAttendance } from './dto/filter-attendance.dto';
+import { CheckOutDto } from './dto/check-out.dto';
+import { UserRole } from '../auth/entities/user.entity';
 
 export interface UserContext {
   userId: string;
@@ -37,13 +40,13 @@ export class AttendanceService {
 
   private getSystemUserId(): string {
     return (
-      this.configService.get<string>("SYSTEM_AUDIT_USER_ID") ??
-      "00000000-0000-4000-8000-000000000001"
+      this.configService.get<string>('SYSTEM_AUDIT_USER_ID') ??
+      '00000000-0000-4000-8000-000000000001'
     );
   }
 
   private getCurrentDate(): string {
-    return new Date().toISOString().split("T")[0];
+    return new Date().toISOString().split('T')[0];
   }
 
   private getCurrentTimestamp(): Date {
@@ -77,19 +80,21 @@ export class AttendanceService {
 
     const employee = await this.employeeRepository.findOne({
       where: { id: employee_id, deleted_at: IsNull() },
-      relations: ["branch"],
+      relations: ['branch'],
     });
 
     if (!employee) {
-      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+      throw new NotFoundException(
+        `Empleado con ID "${employee_id}" no encontrado`,
+      );
     }
 
     if (!employee.active) {
-      throw new ForbiddenException("El empleado está inactivo");
+      throw new ForbiddenException('El empleado está inactivo');
     }
 
     if (employee.access_pin !== pin) {
-      throw new BadRequestException("PIN incorrecto");
+      throw new BadRequestException('PIN incorrecto');
     }
 
     const today = this.getCurrentDate();
@@ -115,7 +120,7 @@ export class AttendanceService {
       check_in: checkInTime,
       check_in_status: status,
       check_out: null,
-      hours_worked: "0",
+      hours_worked: '0',
       created_by: this.getSystemUserId(),
     });
 
@@ -130,15 +135,17 @@ export class AttendanceService {
     });
 
     if (!employee) {
-      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+      throw new NotFoundException(
+        `Empleado con ID "${employee_id}" no encontrado`,
+      );
     }
 
     if (!employee.active) {
-      throw new ForbiddenException("El empleado está inactivo");
+      throw new ForbiddenException('El empleado está inactivo');
     }
 
     if (employee.access_pin !== pin) {
-      throw new BadRequestException("PIN incorrecto");
+      throw new BadRequestException('PIN incorrecto');
     }
 
     const today = this.getCurrentDate();
@@ -151,7 +158,7 @@ export class AttendanceService {
 
     if (!attendance) {
       throw new NotFoundException(
-        "No existe registro de entrada para hoy. Debe registrar entrada primero.",
+        'No existe registro de entrada para hoy. Debe registrar entrada primero.',
       );
     }
 
@@ -162,7 +169,10 @@ export class AttendanceService {
     }
 
     const checkOutTime = this.getCurrentTimestamp();
-    const hoursWorked = this.calculateHoursWorked(attendance.check_in, checkOutTime);
+    const hoursWorked = this.calculateHoursWorked(
+      attendance.check_in,
+      checkOutTime,
+    );
 
     attendance.check_out = checkOutTime;
     attendance.hours_worked = hoursWorked;
@@ -174,7 +184,10 @@ export class AttendanceService {
   async findAll(
     filters: FilterAttendance,
     userContext?: UserContext,
-  ): Promise<{ data: Attendance[]; meta: { total: number; limit: number; offset: number } }> {
+  ): Promise<{
+    data: Attendance[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
     const {
       limit = 10,
       offset = 0,
@@ -205,10 +218,10 @@ export class AttendanceService {
 
     const [data, total] = await this.attendanceRepository.findAndCount({
       where,
-      relations: ["employee", "employee.branch"],
+      relations: ['employee', 'employee.branch'],
       take: limit,
       skip: offset,
-      order: { register_date: "DESC", check_in: "DESC" },
+      order: { register_date: 'DESC', check_in: 'DESC' },
     });
 
     return { data, meta: { total, limit, offset } };
@@ -217,7 +230,7 @@ export class AttendanceService {
   async findOne(id: string, userContext?: UserContext): Promise<Attendance> {
     const attendance = await this.attendanceRepository.findOne({
       where: { id, deleted_at: IsNull() },
-      relations: ["employee", "employee.branch"],
+      relations: ['employee', 'employee.branch'],
     });
     if (!attendance) {
       throw new NotFoundException(`Asistencia con ID "${id}" no encontrada`);
@@ -232,11 +245,18 @@ export class AttendanceService {
     return attendance;
   }
 
-  async update(id: string, dto: UpdateAttendanceDto, userId: string, userContext?: UserContext): Promise<Attendance> {
+  async update(
+    id: string,
+    dto: UpdateAttendanceDto,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<Attendance> {
     const attendance = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
-      throw new ForbiddenException('Las secretarias no pueden modificar assistencias');
+      throw new ForbiddenException(
+        'Las secretarias no pueden modificar assistencias',
+      );
     }
 
     Object.assign(attendance, dto);
@@ -244,17 +264,26 @@ export class AttendanceService {
     return this.attendanceRepository.save(attendance);
   }
 
-  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+  async remove(
+    id: string,
+    userId: string,
+    userContext?: UserContext,
+  ): Promise<{ id: string; deleted: true }> {
     const attendance = await this.findOne(id, userContext);
 
     if (userContext && this.isSecretaria(userContext.role)) {
-      throw new ForbiddenException('Las secretarias no pueden eliminar assistencias');
+      throw new ForbiddenException(
+        'Las secretarias no pueden eliminar assistencias',
+      );
     }
 
-    await this.attendanceRepository.update({ id }, {
-      deleted_at: new Date(),
-      deleted_by: userId,
-    });
+    await this.attendanceRepository.update(
+      { id },
+      {
+        deleted_at: new Date(),
+        deleted_by: userId,
+      },
+    );
     return { id, deleted: true };
   }
 
@@ -266,16 +295,20 @@ export class AttendanceService {
   ): Promise<{ data: Attendance[]; summary: any }> {
     const employee = await this.employeeRepository.findOne({
       where: { id: employee_id, deleted_at: IsNull() },
-      relations: ["branch"],
+      relations: ['branch'],
     });
 
     if (!employee) {
-      throw new NotFoundException(`Empleado con ID "${employee_id}" no encontrado`);
+      throw new NotFoundException(
+        `Empleado con ID "${employee_id}" no encontrado`,
+      );
     }
 
     if (userContext && this.isSecretaria(userContext.role)) {
       if (employee.branch.id !== userContext.branch_id) {
-        throw new ForbiddenException('No tienes acceso a los reportes de este empleado');
+        throw new ForbiddenException(
+          'No tienes acceso a los reportes de este empleado',
+        );
       }
     }
 
@@ -285,15 +318,15 @@ export class AttendanceService {
     };
 
     if (startDate) {
-      where.register_date = require("typeorm").MoreThanOrEqual(startDate);
+      where.register_date = require('typeorm').MoreThanOrEqual(startDate);
     }
     if (endDate) {
-      where.register_date = require("typeorm").LessThanOrEqual(endDate);
+      where.register_date = require('typeorm').LessThanOrEqual(endDate);
     }
 
     const data = await this.attendanceRepository.find({
       where,
-      order: { register_date: "DESC" },
+      order: { register_date: 'DESC' },
     });
 
     const punctualCount = data.filter(
@@ -303,7 +336,10 @@ export class AttendanceService {
       (a) => a.check_in_status === AttendanceEntryStatus.Late,
     ).length;
 
-    const totalHours = data.reduce((sum, a) => sum + parseFloat(a.hours_worked || "0"), 0);
+    const totalHours = data.reduce(
+      (sum, a) => sum + parseFloat(a.hours_worked || '0'),
+      0,
+    );
 
     const summary = {
       employee_name: employee.full_name,
@@ -312,7 +348,8 @@ export class AttendanceService {
       punctual_days: punctualCount,
       late_days: lateCount,
       total_hours: totalHours.toFixed(2),
-      average_hours: data.length > 0 ? (totalHours / data.length).toFixed(2) : "0",
+      average_hours:
+        data.length > 0 ? (totalHours / data.length).toFixed(2) : '0',
     };
 
     return { data, summary };

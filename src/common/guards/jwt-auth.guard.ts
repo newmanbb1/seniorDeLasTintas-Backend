@@ -10,10 +10,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext) {
-    const allowAnonymous = this.reflector.getAllAndOverride<boolean>(ALLOW_ANON_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const allowAnonymous = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_ANON_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (allowAnonymous) {
       return true;
     }

@@ -20,7 +20,8 @@ const EXT_MAP: Record<string, string> = {
       storage: diskStorage({
         destination: './uploads',
         filename: (req, file, callback) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = EXT_MAP[file.mimetype] || '.bin';
           const filename = `${uniqueSuffix}${ext}`;
           callback(null, filename);
@@ -31,7 +32,10 @@ const EXT_MAP: Record<string, string> = {
       },
       fileFilter: (req, file, callback) => {
         if (!EXT_MAP[file.mimetype]) {
-          return callback(new BadRequestException('Tipo de archivo no permitido'), false);
+          return callback(
+            new BadRequestException('Tipo de archivo no permitido'),
+            false,
+          );
         }
         callback(null, true);
       },

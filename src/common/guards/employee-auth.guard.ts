@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ALLOW_ANON_KEY } from './allow-anon.decorator';
 
@@ -7,10 +12,10 @@ export class EmployeeAuthGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const allowAnonymous = this.reflector.getAllAndOverride<boolean>(ALLOW_ANON_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const allowAnonymous = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_ANON_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (allowAnonymous) {
       return true;
     }

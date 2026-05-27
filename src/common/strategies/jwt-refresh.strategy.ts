@@ -15,16 +15,22 @@ export interface JwtRefreshPayload {
 }
 
 @Injectable()
-export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
+export class JwtRefreshStrategy extends PassportStrategy(
+  Strategy,
+  'jwt-refresh',
+) {
   constructor(private configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'default-secret-key',
+      secretOrKey:
+        configService.get<string>('JWT_SECRET') || 'default-secret-key',
     });
   }
 
-  async validate(payload: JwtRefreshPayload): Promise<JwtRefreshPayload | null> {
+  async validate(
+    payload: JwtRefreshPayload,
+  ): Promise<JwtRefreshPayload | null> {
     if (payload.type !== 'refresh') {
       return null;
     }

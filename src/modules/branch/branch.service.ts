@@ -3,16 +3,16 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Like, Repository } from "typeorm";
-import { Branch } from "./entities/branch.entity";
-import { Employee } from "../employee/entities/employee.entity";
-import { Inventory } from "../inventory/entities/inventory.entity";
-import { CreateBranchDto } from "./dto/create-branch.dto";
-import { UpdateBranchDto } from "./dto/update-branch.dto";
-import { FilterBranch } from "./dto/fiter-branch.dto";
-import { UserRole } from "../auth/entities/user.entity";
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Like, Repository } from 'typeorm';
+import { Branch } from './entities/branch.entity';
+import { Employee } from '../employee/entities/employee.entity';
+import { Inventory } from '../inventory/entities/inventory.entity';
+import { CreateBranchDto } from './dto/create-branch.dto';
+import { UpdateBranchDto } from './dto/update-branch.dto';
+import { FilterBranch } from './dto/fiter-branch.dto';
+import { UserRole } from '../auth/entities/user.entity';
 
 export interface UserContext {
   userId: string;
@@ -33,7 +33,7 @@ export class BranchService {
 
   async create(dto: CreateBranchDto, userId: string): Promise<Branch> {
     const existname = await this.branchRepository.findOne({
-      where: { name:dto.name, deleted_at: IsNull() },
+      where: { name: dto.name, deleted_at: IsNull() },
     });
     if (existname) {
       throw new ConflictException(
@@ -47,12 +47,22 @@ export class BranchService {
     return this.branchRepository.save(branch);
   }
 
-  async findAll(filters: FilterBranch, userContext?: UserContext): Promise<{ data: Branch[]; meta: { total: number; limit: number; offset: number } }> {
+  async findAll(
+    filters: FilterBranch,
+    userContext?: UserContext,
+  ): Promise<{
+    data: Branch[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
     const { limit = 10, offset = 0, name, address } = filters;
 
     const where: any = { deleted_at: IsNull() };
 
-    if (userContext && userContext.role === UserRole.SECRETARIA && userContext.branch_id) {
+    if (
+      userContext &&
+      userContext.role === UserRole.SECRETARIA &&
+      userContext.branch_id
+    ) {
       where.id = userContext.branch_id;
     }
 
@@ -67,27 +77,37 @@ export class BranchService {
       where,
       take: limit,
       skip: offset,
-      order: { created_at: "DESC" },
+      order: { created_at: 'DESC' },
     });
 
     return { data, meta: { total, limit, offset } };
   }
 
   async findOne(id: string, userContext?: UserContext): Promise<Branch> {
-    if (userContext && userContext.role === UserRole.SECRETARIA && userContext.branch_id) {
+    if (
+      userContext &&
+      userContext.role === UserRole.SECRETARIA &&
+      userContext.branch_id
+    ) {
       if (id !== userContext.branch_id) {
-        throw new ForbiddenException("No tienes acceso a esta sucursal");
+        throw new ForbiddenException('No tienes acceso a esta sucursal');
       }
     }
 
-    const branch = await this.branchRepository.findOne({ where: { id, deleted_at: IsNull() } });
+    const branch = await this.branchRepository.findOne({
+      where: { id, deleted_at: IsNull() },
+    });
     if (!branch) {
       throw new NotFoundException(`Branch with id "${id}" not found`);
     }
     return branch;
   }
 
-  async update(id: string, dto: UpdateBranchDto, userId: string): Promise<Branch> {
+  async update(
+    id: string,
+    dto: UpdateBranchDto,
+    userId: string,
+  ): Promise<Branch> {
     const branch = await this.findOne(id);
 
     if (dto.name && dto.name !== branch.name) {
@@ -106,7 +126,10 @@ export class BranchService {
     return this.branchRepository.save(branch);
   }
 
-  async remove(id: string, userId: string): Promise<{ id: string; deleted: true }> {
+  async remove(
+    id: string,
+    userId: string,
+  ): Promise<{ id: string; deleted: true }> {
     const branch = await this.findOne(id);
 
     const employeesCount = await this.employeeRepository.count({
@@ -127,10 +150,13 @@ export class BranchService {
       );
     }
 
-    await this.branchRepository.update({ id }, {
-      deleted_at: new Date(),
-      deleted_by: userId,
-    });
+    await this.branchRepository.update(
+      { id },
+      {
+        deleted_at: new Date(),
+        deleted_by: userId,
+      },
+    );
     return { id, deleted: true };
   }
 }

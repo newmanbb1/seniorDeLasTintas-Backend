@@ -17,7 +17,10 @@ import { RegisterAdminDto } from './dto/register-admin.dto';
 import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { LoginPinDto } from './dto/login-pin.dto';
-import { JwtPayload, JwtRefreshPayload } from '../../common/strategies/jwt-refresh.strategy';
+import {
+  JwtPayload,
+  JwtRefreshPayload,
+} from '../../common/strategies/jwt-refresh.strategy';
 
 @Injectable()
 export class AuthService {
@@ -41,7 +44,11 @@ export class AuthService {
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
 
-  async register(dto: RegisterAdminDto): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+  async register(dto: RegisterAdminDto): Promise<{
+    access_token: string;
+    refresh_token: string;
+    user: Partial<User>;
+  }> {
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -57,14 +64,21 @@ export class AuthService {
       full_name: dto.full_name,
       role: UserRole.ADMIN,
       active: true,
-      created_by:this.configService.get<string>('SYSTEM_AUDIT_USER_ID'),
+      created_by: this.configService.get<string>('SYSTEM_AUDIT_USER_ID'),
     });
     await this.userRepository.save(user);
 
     return this.generateTokens(user);
   }
 
-  async registerSecretaria(dto: RegisterSecretariaDto, adminUserId: string): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+  async registerSecretaria(
+    dto: RegisterSecretariaDto,
+    adminUserId: string,
+  ): Promise<{
+    access_token: string;
+    refresh_token: string;
+    user: Partial<User>;
+  }> {
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -88,7 +102,11 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  async login(dto: LoginAdminDto): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+  async login(dto: LoginAdminDto): Promise<{
+    access_token: string;
+    refresh_token: string;
+    user: Partial<User>;
+  }> {
     const user = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -109,7 +127,12 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  async loginPin(dto: LoginPinDto): Promise<{ access_token: string; employee_id: string; employee_name: string; branch_name: string }> {
+  async loginPin(dto: LoginPinDto): Promise<{
+    access_token: string;
+    employee_id: string;
+    employee_name: string;
+    branch_name: string;
+  }> {
     const employee = await this.employeeRepository.findOne({
       where: { access_pin: dto.pin, active: true, deleted_at: IsNull() },
       relations: ['branch'],
@@ -138,10 +161,13 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<{ access_token: string; refresh_token: string }> {
+  async refresh(
+    refreshToken: string,
+  ): Promise<{ access_token: string; refresh_token: string }> {
     try {
       const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken, {
-        secret: this.configService.get<string>('JWT_SECRET') || 'default-secret-key',
+        secret:
+          this.configService.get<string>('JWT_SECRET') || 'default-secret-key',
       });
 
       if (payload.type !== 'refresh') {
@@ -166,7 +192,10 @@ export class AuthService {
 
       return this.generateTokens(user);
     } catch (error) {
-      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new UnauthorizedException('Refresh token inválido');
@@ -192,7 +221,11 @@ export class AuthService {
     return result;
   }
 
-  private async generateTokens(user: User): Promise<{ access_token: string; refresh_token: string; user: Partial<User> }> {
+  private async generateTokens(user: User): Promise<{
+    access_token: string;
+    refresh_token: string;
+    user: Partial<User>;
+  }> {
     const payload: JwtPayload = {
       sub: user.id,
       id: user.id,
@@ -244,8 +277,11 @@ export class AuthService {
     offset: number = 0,
     branch_id?: string,
     active?: boolean,
-  ): Promise<{ data: User[]; meta: { total: number; limit: number; offset: number } }> {
-    const where: any = { 
+  ): Promise<{
+    data: User[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const where: any = {
       role: UserRole.SECRETARIA,
       deleted_at: IsNull(),
     };

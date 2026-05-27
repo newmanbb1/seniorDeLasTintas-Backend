@@ -9,7 +9,7 @@ import {
   Post,
   Query,
   UseGuards,
-} from "@nestjs/common";
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -17,26 +17,26 @@ import {
   ApiNotFoundResponse,
   ApiOperation,
   ApiTags,
-} from "@nestjs/swagger";
+} from '@nestjs/swagger';
 import {
   ApiCreatedWrapped,
   ApiErrorResponseDto,
   ApiOkWrapped,
   ok,
-} from "src/common/response";
-import { SupplyService } from "./supply.service";
-import { CreateSupplyDto } from "./dto/create-supply.dto";
-import { UpdateSupplyDto } from "./dto/update-supply.dto";
-import { FilterSupply } from "./dto/filter-supply.dto";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
-import { RolesGuard } from "../../common/guards/roles.guard";
-import { Roles, GetUser } from "../../common/decorators";
-import { UserRole } from "../auth/entities/user.entity";
+} from 'src/common/response';
+import { SupplyService } from './supply.service';
+import { CreateSupplyDto } from './dto/create-supply.dto';
+import { UpdateSupplyDto } from './dto/update-supply.dto';
+import { FilterSupply } from './dto/filter-supply.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles, GetUser } from '../../common/decorators';
+import { UserRole } from '../auth/entities/user.entity';
 
-@ApiTags("supply")
+@ApiTags('supply')
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
 @ApiNotFoundResponse({ type: ApiErrorResponseDto })
-@Controller("supply")
+@Controller('supply')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class SupplyController {
@@ -44,47 +44,53 @@ export class SupplyController {
 
   @Post()
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Create supply (Admin only)" })
+  @ApiOperation({ summary: 'Create supply (Admin only)' })
   @ApiBody({ type: CreateSupplyDto })
   @ApiCreatedWrapped()
-  async create(@Body() createSupplyDto: CreateSupplyDto, @GetUser('id') userId: string) {
+  async create(
+    @Body() createSupplyDto: CreateSupplyDto,
+    @GetUser('id') userId: string,
+  ) {
     return ok(await this.supplyService.create(createSupplyDto, userId));
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
-  @ApiOperation({ summary: "List supplies with pagination and filters" })
+  @ApiOperation({ summary: 'List supplies with pagination and filters' })
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {
     return ok(await this.supplyService.findAll(filters));
   }
 
-  @Get(":id")
+  @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
-  @ApiOperation({ summary: "Get supply by id" })
+  @ApiOperation({ summary: 'Get supply by id' })
   @ApiOkWrapped()
-  async findOne(@Param("id", ParseUUIDPipe) id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return ok(await this.supplyService.findOne(id));
   }
 
-  @Patch(":id")
+  @Patch(':id')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Update supply" })
+  @ApiOperation({ summary: 'Update supply' })
   @ApiBody({ type: UpdateSupplyDto })
   @ApiOkWrapped()
   async update(
-    @Param("id", ParseUUIDPipe) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateSupplyDto: UpdateSupplyDto,
     @GetUser('id') userId: string,
   ) {
     return ok(await this.supplyService.update(id, updateSupplyDto, userId));
   }
 
-  @Delete(":id")
+  @Delete(':id')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Soft-delete supply" })
+  @ApiOperation({ summary: 'Soft-delete supply' })
   @ApiOkWrapped()
-  async remove(@Param("id", ParseUUIDPipe) id: string, @GetUser('id') userId: string) {
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser('id') userId: string,
+  ) {
     return ok(await this.supplyService.remove(id, userId));
   }
 }

@@ -17,7 +17,7 @@ export type ApiErrorBody = {
 
 export function ok<T>(data: T, message?: string): ApiSuccessBody<T> {
   const body: ApiSuccessBody<T> = { success: true, data };
-  if (message !== undefined && message !== "") {
+  if (message !== undefined && message !== '') {
     body.message = message;
   }
   return body;

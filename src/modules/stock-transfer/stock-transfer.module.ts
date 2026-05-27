@@ -8,7 +8,9 @@ import { Supply } from '../supply/entities/supply.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([StockTransfer, Branch, Supply, Inventory])],
+  imports: [
+    TypeOrmModule.forFeature([StockTransfer, Branch, Supply, Inventory]),
+  ],
   controllers: [StockTransferController],
   providers: [StockTransferService],
 })

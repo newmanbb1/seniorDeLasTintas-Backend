@@ -30,7 +30,9 @@ export class AuthController {
   @Post('register')
   @AllowAnonymous()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Registrar nuevo administrador (solo primer registro)' })
+  @ApiOperation({
+    summary: 'Registrar nuevo administrador (solo primer registro)',
+  })
   async register(@Body() dto: RegisterAdminDto) {
     const result = await this.authService.register(dto);
     return {
@@ -47,7 +49,10 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar nueva secretaria (solo admin)' })
   @ApiBody({ type: RegisterSecretariaDto })
-  async registerSecretaria(@Body() dto: RegisterSecretariaDto, @GetUser('id') adminUserId: string) {
+  async registerSecretaria(
+    @Body() dto: RegisterSecretariaDto,
+    @GetUser('id') adminUserId: string,
+  ) {
     const result = await this.authService.registerSecretaria(dto, adminUserId);
     return {
       success: true,
@@ -127,9 +132,7 @@ export class AuthController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Listar todas las secretarias (solo admin)' })
-  async findAllSecretarias(
-    @Request() req: any,
-  ) {
+  async findAllSecretarias(@Request() req: any) {
     const { limit, offset, branch_id, active } = req.query;
     const result = await this.authService.findAllSecretarias(
       limit ? parseInt(limit) : 10,
