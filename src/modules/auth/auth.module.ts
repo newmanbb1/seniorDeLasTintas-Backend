@@ -19,7 +19,13 @@ import { JwtRefreshStrategy } from '../../common/strategies/jwt-refresh.strategy
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'default-secret-key',
+        secret: (() => {
+          const secret = configService.get<string>('JWT_SECRET');
+          if (!secret) {
+            throw new Error('JWT_SECRET no configurado en variables de entorno');
+          }
+          return secret;
+        })(),
         signOptions: {
           expiresIn: 900,
         },

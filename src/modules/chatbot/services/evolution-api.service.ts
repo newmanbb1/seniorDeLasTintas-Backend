@@ -11,15 +11,24 @@ export class EvolutionApiService implements OnModuleInit {
   private readonly maxRetries = 10;
   private readonly retryDelay = 3000;
 
+  private readonly webhookSecret: string;
+
   constructor(private readonly configService: ConfigService) {
-    const evolutionUrl =
-      this.configService.get<string>('EVOLUTION_URL') ||
-      'http://evolution:8080';
-    const apiKey =
-      this.configService.get<string>('EVOLUTION_API_KEY') ||
-      'fixed-api-key-12345';
-    this.instanceName =
-      this.configService.get<string>('INSTANCE_NAME') || 'senorbot';
+    const evolutionUrl = this.configService.get<string>('EVOLUTION_URL');
+    const apiKey = this.configService.get<string>('EVOLUTION_API_KEY');
+    const instanceName = this.configService.get<string>('INSTANCE_NAME');
+    this.webhookSecret = this.configService.get<string>('WEBHOOK_SECRET') || '';
+
+    if (!evolutionUrl) {
+      throw new Error('EVOLUTION_URL no configurado en variables de entorno');
+    }
+    if (!apiKey) {
+      throw new Error('EVOLUTION_API_KEY no configurado en variables de entorno');
+    }
+    if (!instanceName) {
+      throw new Error('INSTANCE_NAME no configurado en variables de entorno');
+    }
+    this.instanceName = instanceName;
 
     this.client = axios.create({
       baseURL: evolutionUrl,
@@ -122,23 +131,29 @@ export class EvolutionApiService implements OnModuleInit {
     try {
       const webhookUrl = `http://backend:3000/api/chatbot/webhook`;
 
+      const webhookConfig: any = {
+        enabled: true,
+        url: webhookUrl,
+        byEvents: false,
+        events: [
+          'MESSAGES_UPSERT',
+          'MESSAGES_UPDATE',
+          'CHATS_UPSERT',
+          'CHATS_UPDATE',
+          'CHATS_SET',
+          'CONTACTS_SET',
+          'CONTACTS_UPSERT',
+          'CONNECTION_UPDATE',
+          'QRCODE_UPDATED',
+        ],
+      };
+
+      if (this.webhookSecret) {
+        webhookConfig.headers = { 'x-webhook-secret': this.webhookSecret };
+      }
+
       await this.client.post(`/webhook/set/${this.instanceName}`, {
-        webhook: {
-          enabled: true,
-          url: webhookUrl,
-          byEvents: false,
-          events: [
-            'MESSAGES_UPSERT',
-            'MESSAGES_UPDATE',
-            'CHATS_UPSERT',
-            'CHATS_UPDATE',
-            'CHATS_SET',
-            'CONTACTS_SET',
-            'CONTACTS_UPSERT',
-            'CONNECTION_UPDATE',
-            'QRCODE_UPDATED',
-          ],
-        },
+        webhook: webhookConfig,
       });
 
       this.logger.log(`Webhook configurado para ${this.instanceName}`);

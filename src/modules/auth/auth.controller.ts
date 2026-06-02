@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterAdminDto } from './dto/register-admin.dto';
@@ -75,6 +76,7 @@ export class AuthController {
   }
 
   @Post('login-pin')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login de empleado (solo PIN)' })

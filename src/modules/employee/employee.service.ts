@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Like, Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { Employee } from './entities/employee.entity';
 import { Branch } from '../branch/entities/branch.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
@@ -68,8 +69,10 @@ export class EmployeeService {
       );
     }
 
+    const hashedPin = await bcrypt.hash(dto.access_pin, 10);
     const employee = this.employeeRepository.create({
       ...dto,
+      access_pin: hashedPin,
       created_by: userId,
     });
     return this.employeeRepository.save(employee);
@@ -176,7 +179,14 @@ export class EmployeeService {
       }
     }
 
-    Object.assign(employee, dto);
+    if (dto.access_pin) {
+      dto.access_pin = await bcrypt.hash(dto.access_pin, 10);
+    }
+    if (dto.full_name !== undefined) employee.full_name = dto.full_name;
+    if (dto.access_pin !== undefined) employee.access_pin = dto.access_pin;
+    if (dto.position !== undefined) employee.position = dto.position;
+    if (dto.branch_id !== undefined) employee.branch = { id: dto.branch_id } as any;
+    if (dto.active !== undefined) employee.active = dto.active;
     employee.updated_by = userId;
     return this.employeeRepository.save(employee);
   }

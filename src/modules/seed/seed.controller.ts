@@ -20,7 +20,9 @@ export class SeedController {
   constructor(private readonly seedService: SeedService) {}
 
   @Post('all')
-  @AllowAnonymous()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ejecutar seed completo' })
   async seedAll() {
@@ -33,9 +35,11 @@ export class SeedController {
   }
 
   @Post('reset')
-  @AllowAnonymous()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Limpiar datos y ejecutar seed' })
+  @ApiOperation({ summary: 'Limpiar datos y ejecutar seed (solo admin)' })
   async resetAndSeed() {
     const result = await this.seedService.resetAndSeed();
     return {

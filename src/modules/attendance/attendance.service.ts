@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, LessThanOrEqual, Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import {
   Attendance,
   AttendanceEntryStatus,
@@ -93,7 +94,8 @@ export class AttendanceService {
       throw new ForbiddenException('El empleado está inactivo');
     }
 
-    if (employee.access_pin !== pin) {
+    const isPinValid = await bcrypt.compare(pin, employee.access_pin);
+    if (!isPinValid) {
       throw new BadRequestException('PIN incorrecto');
     }
 
@@ -144,7 +146,8 @@ export class AttendanceService {
       throw new ForbiddenException('El empleado está inactivo');
     }
 
-    if (employee.access_pin !== pin) {
+    const isPinValid = await bcrypt.compare(pin, employee.access_pin);
+    if (!isPinValid) {
       throw new BadRequestException('PIN incorrecto');
     }
 
@@ -259,7 +262,6 @@ export class AttendanceService {
       );
     }
 
-    Object.assign(attendance, dto);
     attendance.updated_by = userId;
     return this.attendanceRepository.save(attendance);
   }
@@ -318,10 +320,10 @@ export class AttendanceService {
     };
 
     if (startDate) {
-      where.register_date = require('typeorm').MoreThanOrEqual(startDate);
+      where.register_date = MoreThanOrEqual(startDate);
     }
     if (endDate) {
-      where.register_date = require('typeorm').LessThanOrEqual(endDate);
+      where.register_date = LessThanOrEqual(endDate);
     }
 
     const data = await this.attendanceRepository.find({

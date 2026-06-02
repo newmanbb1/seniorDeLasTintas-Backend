@@ -292,8 +292,10 @@ export class SeedService {
         continue;
       }
 
+      const hashedPin = await bcrypt.hash(empData.access_pin, 10);
       const employee = this.employeeRepository.create({
         ...empData,
+        access_pin: hashedPin,
         branch,
         active: true,
         created_by: adminId,

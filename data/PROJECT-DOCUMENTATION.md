@@ -146,10 +146,13 @@ src/
 ```
 1. Frontend → POST /auth/login-pin
    Body: { "pin": "1234" }
+   └─ Limitado a 5 intentos por minuto (rate limiting)
 
 2. Backend:
-   - Busca empleado por PIN activo
-   - Genera access_token con employee_id
+   - Obtiene todos los empleados activos
+   - Itera con bcrypt.compare(pin, employee.access_pin) hasta encontrar match
+   - Si no hay match → 401 Unauthorized
+   - Si hay match → genera access_token con employee_id
 
 3. Respuesta exitosa:
 {
@@ -558,13 +561,66 @@ El backend implementa las siguientes medidas de seguridad para proteger la aplic
 
 ### Rate Limiting (Límite de Peticiones)
 
-| Nivel | Límite | Ventana |
-|-------|--------|---------|
-| `short` | 10 req | 1 segundo |
-| `medium` | 50 req | 10 segundos |
-| `long` | 100 req | 1 minuto |
+| Nivel | Límite | Ventana | Endpoints |
+|-------|--------|---------|-----------|
+| `short` | 10 req | 1 segundo | Global (todos) |
+| `medium` | 50 req | 10 segundos | Global (todos) |
+| `long` | 100 req | 1 minuto | Global (todos) |
+| `login-pin` | 5 req | 1 minuto | `POST /auth/login-pin` |
+| `check-in/out` | 10 req | 1 minuto | `POST /attendance/check-in`, `POST /attendance/check-out` |
 
 Si superas el límite, recibirás error `429 Too Many Requests`.
+
+### PINs hasheados con bcrypt
+
+Los PINs de empleados **nunca se almacenan en texto plano**:
+
+```
+Creación:  bcrypt.hash(pin, 10) → guardar hash en BD
+Verificación: bcrypt.compare(pin, hash) → true/false
+```
+
+- En `employee.service.ts`: se hashea el PIN al crear o actualizar empleado
+- En `attendance.service.ts`: se usa `bcrypt.compare()` en check-in y check-out
+- En `auth.service.ts`: se usa `bcrypt.compare()` en login-pin (recorre empleados activos)
+- En `seed.service.ts`: los PINs del seed también se hashean antes de guardar
+
+### Sin fallbacks hardcodeados de secrets
+
+El backend lanza **error de inicio** si falta una variable crítica:
+
+| Variable | Si falta... |
+|----------|-------------|
+| `JWT_SECRET` | Error: "JWT_SECRET no configurado en variables de entorno" |
+| `EVOLUTION_API_KEY` | Error: "EVOLUTION_API_KEY no configurado en variables de entorno" |
+| `DB_HOST/DB_USERNAME/DB_PASSWORD/DB_NAME` | Error: "Faltan variables de entorno de la base de datos" |
+
+No hay valores por defecto inseguros (`'default-secret-key'`, `'fixed-api-key-12345'`, etc.).  
+El archivo `.env` **no está trackeado en git** — usar `.env.example` como plantilla.
+
+### WebhookAuthGuard (x-webhook-secret)
+
+Los 9 endpoints webhook de chatbot (`POST /api/chatbot/webhook*`) están protegidos con un guard que verifica el header `x-webhook-secret`:
+
+```
+Request → ¿Header x-webhook-secret coincide con WEBHOOK_SECRET?
+  ├── Sí → Procesar webhook
+  └── No → 401 Unauthorized
+```
+
+Evolution API se configura automáticamente para enviar el header al registrar los webhooks.
+
+### Mapeo explícito de campos (sin Object.assign)
+
+Todos los `update()` en servicios usan **asignación explícita campo por campo** en lugar de `Object.assign(entity, dto)`, evitando que campos no permitidos del DTO sobrescriban propiedades sensibles de la entidad.
+
+| Servicio | Antes | Después |
+|----------|-------|---------|
+| employee | `Object.assign(employee, dto)` | `employee.full_name = dto.full_name; employee.access_pin = ...` |
+| attendance | `Object.assign(attendance, dto)` | Solo actualiza `updated_by` |
+| supply | `Object.assign(supply, dto)` | `supply.name = dto.name; supply.category = ...` |
+| branch | `Object.assign(branch, dto)` | `branch.name = dto.name; branch.address = ...` |
+| inventory | `Object.assign(inventory, dto)` | `inventory.current_quantity = dto.current_quantity; ...` |
 
 ### Headers de Seguridad (Helmet)
 
@@ -777,8 +833,8 @@ Authorization: Bearer <admin_token>
 | Método | Endpoint | Descripción | Auth |
 |--------|----------|-------------|------|
 | GET | `/api/seed/status` | Verificar estado de la BD | ❌ Público |
-| POST | `/api/seed/all` | Ejecutar seed (inserta datos) | ❌ Público |
-| POST | `/api/seed/reset` | Limpiar datos y reinstallar | ❌ Público |
+| POST | `/api/seed/all` | Ejecutar seed (inserta datos) | ✅ ADMIN |
+| POST | `/api/seed/reset` | Limpiar datos y reinstallar | ✅ ADMIN |
 
 ---
 
@@ -1095,6 +1151,11 @@ fileInput.addEventListener('change', async (e) => {
 | POST | `/api/chatbot/webhook/presence-update` | Webhook para cambio de presencia | ❌ Público |
 | GET | `/api/chatbot/logs?limit=10&offset=0&phone_number=&detected_intention=` | Logs de interacción | ❌ Público |
 | POST | `/api/chatbot/test` | Mensaje de prueba | ✅ JWT + ADMIN |
+
+**Nota sobre seguridad de webhooks:**
+- Los 9 endpoints `POST /api/chatbot/webhook*` están protegidos por `WebhookAuthGuard` que verifica el header `x-webhook-secret`.
+- Evolution API se configura automáticamente para enviar el secret al registrar los webhooks.
+- Si el header no coincide con `WEBHOOK_SECRET` del `.env`, el backend responde `401 Unauthorized`.
 
 **Nota:** El endpoint `/chatbot/test` requiere token JWT con rol de ADMIN. Esto es para que solo el administrador pueda enviar mensajes de prueba.
 
@@ -1957,6 +2018,7 @@ DB_SYNC=true
 # Chatbot
 EVOLUTION_URL=http://evolution:8080
 INSTANCE_API_KEY=tu_instance_api_key
+WEBHOOK_SECRET=webhook-shared-secret (debe coincidir con el configurado en Evolution API)
 
 # Auditoría
 SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
@@ -2248,6 +2310,13 @@ npm run migration:generate -- src/migrations/modificar-relacion-inventory
 - [x] `<datalist>` dinámico para categorías, unidades de medida y cargos ✅
 - [x] Check-in/out secuencial (intenta check-in, si ya existe → check-out) ✅
 - [x] Actualización de PIN de 4 a 4-6 dígitos (consistente con backend) ✅
+- [x] PINs hasheados con bcrypt (store + compare en attendance y auth) 🔒
+- [x] Sin fallbacks hardcodeados de secrets (JWT_SECRET, EVOLUTION_API_KEY obligatorios) 🔒
+- [x] `.env` untracked de git (usar `.env.example`) 🔒
+- [x] Seed protegido con rol ADMIN (antes `@AllowAnonymous()`) 🔒
+- [x] WebhookAuthGuard con `x-webhook-secret` en endpoints webhook 🔒
+- [x] Rate limiting específico: login-pin (5/min), check-in/out (10/min) 🔒
+- [x] Mapeo explícito de campos en services (sin `Object.assign`) 🔒
 
 ---
 

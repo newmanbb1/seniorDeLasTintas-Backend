@@ -26,6 +26,7 @@ import { FilterChatbotLog } from '../dto/filter-chatbot-log.dto';
 import { SendMessageDto } from '../dto/send-message.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { WebhookAuthGuard } from 'src/common/guards/webhook-auth.guard';
 import { Roles } from 'src/common/decorators';
 import { UserRole } from 'src/modules/auth/entities/user.entity';
 
@@ -46,6 +47,7 @@ export class ChatbotController {
   }
 
   @Post('webhook')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para recibir mensajes de Evolution API' })
   async handleWebhook(@Body() payload: any) {
@@ -163,6 +165,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/messages-upsert')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de messages upsert' })
   async handleMessagesUpsert(@Body() payload: any) {
@@ -194,6 +197,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/messages-update')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de messages update' })
   async handleMessagesUpdate(@Body() payload: any) {
@@ -210,6 +214,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/chats-upsert')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de chats upsert' })
   async handleChatsUpsert(@Body() payload: any) {
@@ -223,6 +228,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/chats-update')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de chats update' })
   async handleChatsUpdate(@Body() payload: any) {
@@ -231,6 +237,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/contacts-update')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de contacts update' })
   async handleContactsUpdate(@Body() payload: any) {
@@ -239,6 +246,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/connection-update')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de connection update' })
   async handleConnectionUpdate(@Body() payload: any) {
@@ -256,6 +264,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/qrcode-updated')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de qrcode updated' })
   async handleQrCodeUpdated(@Body() payload: any) {
@@ -271,6 +280,7 @@ export class ChatbotController {
   }
 
   @Post('webhook/presence-update')
+  @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de presence update' })
   async handlePresenceUpdate(@Body() payload: any) {

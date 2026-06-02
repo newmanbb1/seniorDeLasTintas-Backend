@@ -36,11 +36,14 @@ export class AuthService {
   ) {}
 
   private getAccessTokenExpiry(): string {
-    return this.configService.get<string>('JWT_EXPIRES_IN') || '15m';
+    return (
+      this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m'
+    );
   }
 
   private getRefreshTokenExpiry(): Date {
-    const days = this.configService.get<number>('JWT_REFRESH_DAYS') || 7;
+    const days =
+      this.configService.get<number>('JWT_REFRESH_DAYS') ?? 7;
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
 
@@ -133,11 +136,21 @@ export class AuthService {
     employee_name: string;
     branch_name: string;
   }> {
-    const employee = await this.employeeRepository.findOne({
-      where: { access_pin: dto.pin, active: true, deleted_at: IsNull() },
+    const employees = await this.employeeRepository.find({
+      where: { active: true, deleted_at: IsNull() },
       relations: ['branch'],
     });
 
+    let matchedEmployee: Employee | null = null;
+    for (const emp of employees) {
+      const isMatch = await bcrypt.compare(dto.pin, emp.access_pin);
+      if (isMatch) {
+        matchedEmployee = emp;
+        break;
+      }
+    }
+
+    const employee = matchedEmployee;
     if (!employee) {
       throw new UnauthorizedException('PIN inválido o empleado inactivo');
     }
@@ -167,7 +180,13 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken, {
         secret:
-          this.configService.get<string>('JWT_SECRET') || 'default-secret-key',
+          (() => {
+          const secret = this.configService.get<string>('JWT_SECRET');
+          if (!secret) {
+            throw new Error('JWT_SECRET no configurado en variables de entorno');
+          }
+          return secret;
+        })(),
       });
 
       if (payload.type !== 'refresh') {

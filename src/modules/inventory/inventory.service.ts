@@ -229,7 +229,10 @@ export class InventoryService {
       }
     }
 
-    Object.assign(inventory, dto);
+    if (dto.current_quantity !== undefined) inventory.current_quantity = dto.current_quantity;
+    if (dto.minimum_stock !== undefined) inventory.minimum_stock = dto.minimum_stock;
+    if (dto.branch_id !== undefined) inventory.branch = { id: dto.branch_id } as any;
+    if (dto.supply_id !== undefined) inventory.supply = { id: dto.supply_id } as any;
     inventory.updated_by = userId;
     return this.inventoryRepository.save(inventory);
   }

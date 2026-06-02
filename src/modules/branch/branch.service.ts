@@ -121,7 +121,10 @@ export class BranchService {
       }
     }
 
-    Object.assign(branch, dto);
+    if (dto.name !== undefined) branch.name = dto.name;
+    if (dto.address !== undefined) branch.address = dto.address;
+    if (dto.opening_hours !== undefined) branch.opening_hours = dto.opening_hours;
+    if (dto.location_link !== undefined) branch.location_link = dto.location_link;
     branch.updated_by = userId;
     return this.branchRepository.save(branch);
   }

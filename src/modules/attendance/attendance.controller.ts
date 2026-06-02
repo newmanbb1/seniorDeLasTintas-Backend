@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -52,6 +53,7 @@ export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Post('check-in')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AllowAnonymous()
   @ApiOperation({ summary: 'Registrar hora de entrada del empleado (PIN)' })
   @ApiBody({ type: CreateAttendanceDto })
@@ -61,6 +63,7 @@ export class AttendanceController {
   }
 
   @Post('check-out')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AllowAnonymous()
   @ApiOperation({ summary: 'Registrar hora de salida del empleado (PIN)' })
   @ApiBody({ type: CheckOutDto })

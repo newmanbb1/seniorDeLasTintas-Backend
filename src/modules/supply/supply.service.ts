@@ -95,7 +95,14 @@ export class SupplyService {
       }
     }
 
-    Object.assign(supply, dto);
+    if (dto.code !== undefined) supply.code = dto.code;
+    if (dto.name !== undefined) supply.name = dto.name;
+    if (dto.category !== undefined) supply.category = dto.category;
+    if (dto.unit_of_measure !== undefined) supply.unit_of_measure = dto.unit_of_measure;
+    if (dto.is_active !== undefined) supply.is_active = dto.is_active;
+    if (dto.umbral_min !== undefined) supply.umbral_min = dto.umbral_min;
+    if (dto.images !== undefined) supply.images = dto.images;
+    if (dto.videos !== undefined) supply.videos = dto.videos;
     supply.updated_by = userId;
     return this.supplyRepository.save(supply);
   }
