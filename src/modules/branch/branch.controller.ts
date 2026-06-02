@@ -27,7 +27,7 @@ import {
 import { BranchService } from './branch.service';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
-import { FilterBranch } from './dto/fiter-branch.dto';
+import { FilterBranch } from './dto/filter-branch.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';

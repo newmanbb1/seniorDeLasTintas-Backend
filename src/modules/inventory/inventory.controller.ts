@@ -71,6 +71,17 @@ export class InventoryController {
     );
   }
 
+  @Get('alerts')
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
+  @ApiOperation({
+    summary: 'Obtener alertas de stock crítico',
+  })
+  @ApiOkWrapped()
+  async getAlerts(@GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.inventoryService.getAlerts(userContext));
+  }
+
   @Post('transfer')
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({
@@ -136,6 +147,7 @@ export class InventoryController {
   @Patch(':id/adjust')
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'Adjust inventory quantity' })
+  @ApiBody({ schema: { type: 'object', properties: { adjustment: { type: 'number', example: -5 } } } })
   @ApiOkWrapped()
   async adjustQuantity(
     @Param('id', ParseUUIDPipe) id: string,

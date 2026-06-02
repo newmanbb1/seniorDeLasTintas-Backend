@@ -4,19 +4,26 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Query,
+  Sse,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiOperation,
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Observable } from 'rxjs';
 import { ApiErrorResponseDto, ApiOkWrapped, ok } from 'src/common/response';
 import { ChatbotService } from '../services/chatbot.service';
+import { ConversationService, MessageEvent } from '../services/conversation.service';
+import { EvolutionApiService } from '../services/evolution-api.service';
 import { FilterChatbotLog } from '../dto/filter-chatbot-log.dto';
+import { SendMessageDto } from '../dto/send-message.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators';
@@ -26,7 +33,17 @@ import { UserRole } from 'src/modules/auth/entities/user.entity';
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
 @Controller('chatbot')
 export class ChatbotController {
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(
+    private readonly chatbotService: ChatbotService,
+    private readonly conversationService: ConversationService,
+    private readonly evolutionApiService: EvolutionApiService,
+  ) {}
+
+  @Sse('events')
+  @ApiOperation({ summary: 'SSE stream de eventos en tiempo real' })
+  events(): Observable<MessageEvent> {
+    return this.conversationService.subscribe();
+  }
 
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
@@ -35,20 +52,17 @@ export class ChatbotController {
     try {
       console.log('Webhook recibido:', JSON.stringify(payload, null, 2));
 
-      // Validar que payload no sea vacío o indefinido
       if (!payload || typeof payload !== 'object') {
         console.log('Payload inválido o vacío');
         return { success: true };
       }
 
-      // Obtener el evento (puede venir como event, type, o en data.event)
       const event = payload.event || payload.type || payload.data?.event;
 
       if (!event) {
         console.log(
           'Sin evento en payload, intentando procesar como mensaje directo',
         );
-        // Intentar procesar directamente como mensaje
         if (payload.messages || payload.message) {
           const messages = payload.messages || [payload];
           for (const messageData of messages) {
@@ -60,17 +74,14 @@ export class ChatbotController {
 
       console.log('Evento detectado:', event);
 
-      // Manejar diferentes eventos de Evolution API
       if (
         event === 'messages.upsert' ||
         event === 'message' ||
         event === 'messages.update'
       ) {
         console.log('=== Procesando evento de mensaje:', event, '===');
-        // La estructura de Evolution API tiene el mensaje en payload.data directamente
         let messageData = payload.data;
 
-        // Para messages.update, puede venir en data.messages[0]
         if (payload.data?.messages?.[0]) {
           messageData = payload.data.messages[0];
         }
@@ -90,8 +101,58 @@ export class ChatbotController {
           console.log('Otro tipo de mensaje, procesando...');
           await this.processMessageData(messageData);
         }
-      } else if (event === 'connection') {
+      } else if (
+        event === 'chats.upsert' ||
+        event === 'CHATS_UPSERT' ||
+        event === 'chats.set' ||
+        event === 'CHATS_SET'
+      ) {
+        const chats = payload.data || [];
+        console.log(`Evento de chats: ${event}, ${chats.length} chats`);
+        await this.conversationService.handleChatUpsert(
+          Array.isArray(chats) ? chats : [chats],
+        );
+        this.conversationService.emit('conversations_updated', {});
+      } else if (
+        event === 'contacts.set' ||
+        event === 'CONTACTS_SET' ||
+        event === 'contacts.upsert' ||
+        event === 'CONTACTS_UPSERT'
+      ) {
+        const contacts = payload.data || [];
+        console.log(`Evento de contactos: ${event}, ${contacts.length} contactos`);
+        await this.conversationService.handleContactUpsert(
+          Array.isArray(contacts) ? contacts : [contacts],
+        );
+        this.conversationService.emit('conversations_updated', {});
+      } else if (
+        event === 'connection' ||
+        event === 'CONNECTION_UPDATE' ||
+        event === 'connection.update'
+      ) {
         console.log('Evento de conexión:', payload.data);
+        const state =
+          payload.data?.instance?.state ||
+          payload.data?.state;
+        if (state) {
+          this.conversationService.emit('connection_status', state);
+        }
+      } else if (
+        event === 'qrcode.updated' ||
+        event === 'QRCODE_UPDATED' ||
+        event === 'qrcode_updated'
+      ) {
+        console.log('QR actualizado vía webhook general');
+        const qrPayload = payload.data || payload;
+        const qrObj = qrPayload?.qrcode;
+        if (qrObj) {
+          const qrBase64 = typeof qrObj === 'string' ? qrObj : qrObj.base64;
+          if (qrBase64) {
+            this.conversationService.emit('qrcode_updated', {
+              qrcode: qrBase64,
+            });
+          }
+        }
       }
 
       return { success: true };
@@ -110,11 +171,8 @@ export class ChatbotController {
       console.log(JSON.stringify(payload, null, 2));
       console.log('=== End payload ===');
 
-      // En Evolution API con WEBHOOK_BY_EVENTS, el mensaje viene en payload.data directamente
-      // La estructura es: payload.data = { key, message, pushName, ... }
       let messageData = payload.data;
 
-      // Si viene en array messages, usar el primero
       if (!messageData && payload.data?.messages?.[0]) {
         messageData = payload.data.messages[0];
       }
@@ -188,6 +246,12 @@ export class ChatbotController {
       'Connection update recibido:',
       JSON.stringify(payload, null, 2),
     );
+    if (payload.data?.instance?.state) {
+      this.conversationService.emit(
+        'connection_status',
+        payload.data.instance.state,
+      );
+    }
     return { success: true };
   }
 
@@ -196,6 +260,13 @@ export class ChatbotController {
   @ApiOperation({ summary: 'Webhook para eventos de qrcode updated' })
   async handleQrCodeUpdated(@Body() payload: any) {
     console.log('QR code updated recibido:', JSON.stringify(payload, null, 2));
+    const qrObj = payload.data?.qrcode;
+    if (qrObj) {
+      const qrBase64 = typeof qrObj === 'string' ? qrObj : qrObj.base64;
+      if (qrBase64) {
+        this.conversationService.emit('qrcode_updated', { qrcode: qrBase64 });
+      }
+    }
     return { success: true };
   }
 
@@ -213,21 +284,24 @@ export class ChatbotController {
       return;
     }
 
+    if (messageData.key?.fromMe) {
+      console.log('Ignorando mensaje propio (fromMe = true)');
+      return;
+    }
+
     console.log('=== processMessageData input ===');
     console.log(JSON.stringify(messageData, null, 2));
     console.log('=== end ===');
 
-    // Procesar todos los mensajes que no vengan del webhook global
-    // El remoteJidAlt tiene el número real del remitente
     const remoteJid =
       messageData.key?.remoteJidAlt ||
       messageData.key?.remoteJid ||
       messageData.remoteJid;
-    const pushName = messageData.pushName || messageData.pushName || 'Usuario';
+    const pushName = messageData.pushName || messageData.pushName || '';
+    const waMessageId = messageData.key?.id;
 
     let messageText = '';
 
-    // Extraer texto del mensaje (múltiples formatos)
     if (messageData.message?.conversation) {
       messageText = messageData.message.conversation;
     } else if (messageData.message?.extendedTextMessage?.text) {
@@ -250,8 +324,17 @@ export class ChatbotController {
         console.log(`Ignorando mensaje de grupo: ${remoteJid}`);
         return;
       }
-      const phoneNumber = remoteJid.replace('@s.whatsapp.net', '');
+      const phoneNumber = remoteJid.split('@')[0];
       console.log(`Procesando mensaje de ${phoneNumber}: ${messageText}`);
+
+      await this.conversationService.saveIncomingMessage({
+        phoneNumber,
+        profileName: pushName,
+        messageText,
+        waMessageId,
+        timestamp: new Date(),
+      });
+
       await this.chatbotService.processMessage(
         phoneNumber,
         messageText,
@@ -285,6 +368,7 @@ export class ChatbotController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Enviar mensaje de prueba (Admin only)' })
+  @ApiBody({ schema: { type: 'object', properties: { phone: { type: 'string', example: '59167645041' }, message: { type: 'string', example: 'Hola' } } } })
   @ApiOkWrapped()
   async sendTestMessage(@Body() body: { phone: string; message: string }) {
     console.log(
@@ -296,5 +380,88 @@ export class ChatbotController {
       'Test User',
     );
     return ok({ success: true });
+  }
+
+  @Get('status')
+  @ApiOperation({ summary: 'Estado de conexión de WhatsApp' })
+  async getStatus() {
+    const status = await this.evolutionApiService.getInstanceStatus();
+    return { state: status?.instance?.state || 'close' };
+  }
+
+  @Get('conversations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Listar conversaciones de WhatsApp' })
+  @ApiOkWrapped()
+  async getConversations() {
+    return ok(await this.conversationService.getConversations());
+  }
+
+  @Get('conversations/:phone/messages')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Obtener mensajes de una conversación' })
+  @ApiOkWrapped()
+  async getMessages(@Param('phone') phone: string) {
+    return ok(await this.conversationService.getMessages(phone));
+  }
+
+  @Post('conversations/:phone/read')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Marcar conversación como leída' })
+  @ApiOkWrapped()
+  async markAsRead(@Param('phone') phone: string) {
+    await this.conversationService.markAsRead(phone);
+    return ok({ success: true });
+  }
+
+  @Post('conversations/:phone/messages')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Enviar mensaje manual a una conversación' })
+  @ApiOkWrapped()
+  async sendMessage(
+    @Param('phone') phone: string,
+    @Body() body: SendMessageDto,
+  ) {
+    const message = await this.conversationService.sendManualMessage(
+      phone,
+      body.message,
+    );
+    return ok(message);
+  }
+
+  @Post('conversations/:phone/archive')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Archivar/desarchivar conversación' })
+  @ApiOkWrapped()
+  async toggleArchive(@Param('phone') phone: string) {
+    const session = await this.conversationService.toggleArchive(phone);
+    return ok(session);
+  }
+
+  @Post('reconnect')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reconectar instancia de WhatsApp (regenera QR)' })
+  @ApiOkWrapped()
+  async reconnect() {
+    const result = await this.evolutionApiService.reconnectInstance();
+    if (result.success && result.qrcode) {
+      this.conversationService.emit('qrcode_updated', {
+        qrcode: result.qrcode,
+      });
+    }
+    return ok(result);
   }
 }

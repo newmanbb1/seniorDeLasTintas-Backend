@@ -4,6 +4,10 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsBoolean,
+  IsInt,
+  Min,
+  Max,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -54,4 +58,16 @@ export class CreateSupplyDto {
   @IsArray()
   @IsString({ each: true })
   videos?: string[];
+
+  @ApiProperty({ example: true, required: false, default: true })
+  @IsOptional()
+  @IsBoolean()
+  is_active?: boolean;
+
+  @ApiProperty({ example: 5, required: false, description: 'Umbral mínimo para alerta de stock crítico' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(999999)
+  umbral_min?: number;
 }

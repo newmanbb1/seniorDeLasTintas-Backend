@@ -255,7 +255,7 @@ fetch('/branch', {
 | **RefreshToken** | `refresh_token` | `auth` | Tokens de renovación |
 | **Branch** | `branch` | `branch` | Sucursales del negocio |
 | **Employee** | `employee` | `employee` | Personal empleado |
-| **Supply** | `supply` | `supply` | Catálogo de insumos |
+| **Supply** | `supply` | `supply` | Catálogo de insumos (con `is_active`, `umbral_min`) |
 | **Inventory** | `inventory` | `inventory` | Stock por sucursal |
 | **StockTransfer** | `stock_transfer` | `stock-transfer` | Traspasos de mercadería |
 | **Attendance** | `attendance` | `attendance` | Registro de asistencia |
@@ -264,8 +264,9 @@ fetch('/branch', {
 
 | Entidad | Tabla DB | Módulo | Descripción |
 |---------|-----------|--------|-------------|
-| **WhatsAppSession** | `whatsapp_session` | `chatbot` | Sesiones activas de WhatsApp |
-| **ChatbotLog** | `chatbot_log` | `chatbot` | Auditoría de interacciones |
+| **WhatsAppSession** | `whatsapp_session` | `chatbot` | Sesiones activas de WhatsApp (incluye flow_state, unread_count, is_archived) |
+| **WhatsAppMessage** | `whatsapp_message` | `chatbot` | Historial de mensajes (texto, imágenes, documentos) |
+| **ChatbotLog** | `chatbot_log` | `chatbot` | Auditoría de interacciones (intención detectada, respuesta) |
 
 ---
 
@@ -379,6 +380,8 @@ fetch('/branch', {
   name: string;            // Nombre del insumo
   category: string;        // Categoría (ej: "Tintas", "Repuestos")
   unit_of_measure: string; // Unidad (ej: "litros", "unidades")
+  is_active: boolean;      // Visible en el sistema (default: true)
+  umbral_min: number | null; // Umbral mínimo crítico global (opcional)
   created_at: Date;
   created_by: string;
   updated_at: Date;
@@ -387,6 +390,11 @@ fetch('/branch', {
   deleted_by?: string;
 }
 ```
+
+**Notas:**
+- `is_active`: Permite ocultar insumos del catálogo sin borrarlos
+- `umbral_min`: Umbral crítico global. Si está definido, se usa como límite para alertas de stock crítico en TODAS las sucursales. Si es `null`, se usa `inventory.minimum_stock` como fallback.
+- El frontend evalúa: `COALESCE(supply.umbral_min, inventory.minimum_stock, 0)` para alertas
 
 **Relaciones:**
 - `1:N` con Inventory
@@ -470,6 +478,10 @@ fetch('/branch', {
   profile_name: string;    // Nombre del contacto
   flow_state: enum;        // Estado del flujo conversacional
   last_interaction: Date;  // Última interacción
+  last_message: string;    // Último mensaje visto en conversación
+  last_message_at: Date;   // Timestamp del último mensaje
+  unread_count: number;    // Mensajes no leídos por el admin
+  is_archived: boolean;    // Conversación archivada/oculta
 }
 ```
 
@@ -852,9 +864,14 @@ POST /api/supply
 {
   "name": "Tinta Canon PG-510",
   "category": "Tintas",
-  "unit_of_measure": "unidades"
+  "unit_of_measure": "unidades",
+  "is_active": true,
+  "umbral_min": 5
 }
 ```
+
+- `is_active` (boolean, opcional): default `true`
+- `umbral_min` (number | null, opcional): default `null`. Si se define, las alertas de stock crítico compararán contra este valor en lugar de `minimum_stock`
 
 **Body actualizar insumo:**
 ```json
@@ -873,11 +890,14 @@ PATCH /api/supply/:id
 |--------|----------|-------------|------|
 | POST | `/api/inventory` | Crear registro de inventario | ✅ Admin/Secretaria |
 | GET | `/api/inventory?limit=10&offset=0&branch_id=&supply_id=&low_stock=` | Listar con filtros | ✅ Admin/Secretaria |
+| GET | `/api/inventory/alerts` | Alertas de stock crítico (usa `umbral_min` → `minimum_stock`) | ✅ Admin/Secretaria |
 | GET | `/api/inventory/:id` | Obtener por ID | ✅ Admin/Secretaria |
 | PATCH | `/api/inventory/:id` | Actualizar inventario | ✅ Admin/Secretaria |
 | PATCH | `/api/inventory/:id/adjust` | Ajustar cantidad (±) | ✅ Admin/Secretaria |
 | POST | `/api/inventory/transfer` | **TRASPASO 1 PAGO (ATÓMICO)** | ✅ Admin/Secretaria |
 | DELETE | `/api/inventory/:id` | Eliminar (soft delete) | ✅ Admin |
+
+**GET /api/inventory/alerts** — Retorna items con `current_quantity <= umbral_min` (si existe) o `current_quantity <= minimum_stock`. ADMIN ve todas las sucursales, SECRETARIA solo su sucursal. Incluye `supply_name`, `branch_name`, `current_quantity`, `minimum_stock`, `umbral_min`.
 
 **Body crear inventario:**
 ```json
@@ -2135,11 +2155,12 @@ npm run migration:generate -- src/migrations/modificar-relacion-inventory
 ```
 1. Empleado ingresa PIN en PWA
    → POST /auth/login-pin (opcional para obtener token)
-   → POST /attendance/check-in o /check-out
+   → POST /attendance/check-in (primero)
+   → POST /attendance/check-out (si check-in responde "ya registró entrada")
 
 2. Sistema valida empleado + PIN
-3. Si no hay registro hoy → check-in
-4. Si ya hay check-in → check-out
+3. Intenta check-in primero
+4. Si el backend responde "Ya existe registro de entrada para este empleado en la fecha de hoy" → ejecuta check-out
 5. Sistema calcula horas trabajadas
 ```
 
@@ -2219,6 +2240,14 @@ npm run migration:generate -- src/migrations/modificar-relacion-inventory
 - [x] Idempotencia en transferencias (SHA256 automático) ✅
 - [x] Rate limiting (3 tiers) y Helmet (CSP, HSTS) ✅
 - [x] Seed de datos de prueba ✅
+- [x] Catálogo de insumos con `is_active` (ocultar sin borrar) ✅
+- [x] Umbral mínimo crítico (`umbral_min`) global por insumo + alertas `GET /inventory/alerts` ✅
+- [x] Dashboard de alertas de stock crítico (frontend) ✅
+- [x] Recarga automática de inventario al cambiar sucursal ✅
+- [x] Recarga automática de empleados, dashboard y reportes al cambiar sucursal ✅
+- [x] `<datalist>` dinámico para categorías, unidades de medida y cargos ✅
+- [x] Check-in/out secuencial (intenta check-in, si ya existe → check-out) ✅
+- [x] Actualización de PIN de 4 a 4-6 dígitos (consistente con backend) ✅
 
 ---
 

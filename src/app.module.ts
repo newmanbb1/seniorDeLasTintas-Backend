@@ -5,7 +5,6 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { join } from 'path';
-import { EvolutionInitService } from './config/evolution-init.service';
 import { BranchModule } from './modules/branch/branch.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -73,7 +72,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
   ],
   controllers: [],
   providers: [
-    EvolutionInitService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

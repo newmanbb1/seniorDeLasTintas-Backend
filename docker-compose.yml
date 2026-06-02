@@ -122,6 +122,21 @@ services:
     networks:
       - app_network
 
+  # Frontend React (Nginx)
+  frontend:
+    build:
+      context: ../frontend-senor-tintas
+      args:
+        VITE_API_URL: /api
+    container_name: frontend_nginx
+    restart: always
+    ports:
+      - "3001:80"
+    depends_on:
+      - backend
+    networks:
+      - app_network
+
 volumes:
   postgres_data:
   redis_data:

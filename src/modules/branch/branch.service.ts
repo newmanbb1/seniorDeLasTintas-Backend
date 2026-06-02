@@ -11,7 +11,7 @@ import { Employee } from '../employee/entities/employee.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
-import { FilterBranch } from './dto/fiter-branch.dto';
+import { FilterBranch } from './dto/filter-branch.dto';
 import { UserRole } from '../auth/entities/user.entity';
 
 export interface UserContext {

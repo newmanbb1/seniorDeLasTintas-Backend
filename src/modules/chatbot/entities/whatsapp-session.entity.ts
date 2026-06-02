@@ -27,6 +27,18 @@ export class WhatsAppSession {
   @Column({ type: 'timestamp' })
   last_interaction: Date;
 
+  @Column({ type: 'text', nullable: true })
+  last_message: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  last_message_at: Date;
+
+  @Column({ type: 'int', default: 0 })
+  unread_count: number;
+
+  @Column({ type: 'boolean', default: false })
+  is_archived: boolean;
+
   @OneToMany(() => ChatbotLog, (log) => log.session)
   logs: ChatbotLog[];
 }

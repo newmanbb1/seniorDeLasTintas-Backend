@@ -101,7 +101,10 @@ export class InventoryService {
     }
 
     const inventory = this.inventoryRepository.create({
-      ...dto,
+      branch: { id: branch_id },
+      supply: { id: supply_id },
+      current_quantity: dto.current_quantity,
+      minimum_stock: dto.minimum_stock,
       created_by: userId,
     });
     return this.inventoryRepository.save(inventory);
@@ -442,5 +445,36 @@ export class InventoryService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getAlerts(userContext?: UserContext): Promise<any[]> {
+    const queryBuilder = this.inventoryRepository
+      .createQueryBuilder('inventory')
+      .innerJoinAndSelect('inventory.supply', 'supply')
+      .innerJoinAndSelect('inventory.branch', 'branch')
+      .where('inventory.deleted_at IS NULL')
+      .andWhere(
+        'inventory.current_quantity <= COALESCE(supply.umbral_min, inventory.minimum_stock, 0)',
+      );
+
+    if (userContext && this.isSecretaria(userContext.role)) {
+      queryBuilder.andWhere('branch.id = :branchId', {
+        branchId: userContext.branch_id,
+      });
+    }
+
+    const items = await queryBuilder.getMany();
+
+    return items.map((item) => ({
+      id: item.id,
+      supply_id: item.supply.id,
+      supply_name: item.supply.name,
+      category: item.supply.category,
+      branch_id: item.branch.id,
+      branch_name: item.branch.name,
+      current_quantity: item.current_quantity,
+      minimum_stock: item.minimum_stock,
+      umbral_min: item.supply.umbral_min,
+    }));
   }
 }

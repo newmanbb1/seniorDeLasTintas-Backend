@@ -25,6 +25,12 @@ export class Supply extends BaseEntity {
   @Column({ type: 'text', array: true, nullable: true })
   videos: string[];
 
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
+  @Column({ type: 'int', nullable: true })
+  umbral_min: number;
+
   @OneToMany(() => Inventory, (inventory) => inventory.supply)
   inventories: Inventory[];
 

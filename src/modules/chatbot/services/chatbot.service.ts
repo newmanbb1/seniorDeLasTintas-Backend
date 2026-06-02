@@ -14,6 +14,7 @@ import { Employee } from '../../employee/entities/employee.entity';
 import { Attendance } from '../../attendance/entities/attendance.entity';
 import { EvolutionApiService } from './evolution-api.service';
 import { WhatsAppSessionService } from './whatsapp-session.service';
+import { ConversationService } from './conversation.service';
 
 interface ChatbotContext {
   searchTerm?: string;
@@ -41,6 +42,7 @@ export class ChatbotService {
     @Inject(forwardRef(() => EvolutionApiService))
     private readonly evolutionApiService: EvolutionApiService,
     private readonly sessionService: WhatsAppSessionService,
+    private readonly conversationService: ConversationService,
   ) {}
 
   async processMessage(
@@ -429,7 +431,16 @@ export class ChatbotService {
     try {
       console.log(`=== Enviando respuesta a ${phoneNumber} ===`);
       console.log(`Mensaje: ${message.substring(0, 50)}...`);
-      await this.evolutionApiService.sendMessage(phoneNumber, message);
+      const waMessageId = await this.evolutionApiService.sendMessage(
+        phoneNumber,
+        message,
+      );
+      await this.conversationService.saveOutgoingMessage({
+        phoneNumber,
+        messageText: message,
+        waMessageId: waMessageId || undefined,
+        timestamp: new Date(),
+      });
       console.log(`=== Respuesta enviada ===`);
     } catch (error) {
       console.error('Error sending WhatsApp message:', error);
