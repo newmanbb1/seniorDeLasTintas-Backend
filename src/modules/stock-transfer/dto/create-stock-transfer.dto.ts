@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsUUID, Min } from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class CreateStockTransferDto {
   @ApiProperty({ description: 'UUID de la sucursal de origen' })
@@ -19,7 +19,7 @@ export class CreateStockTransferDto {
   @Min(1)
   quantity: number;
 
-  @ApiProperty({ description: 'Fecha de solicitud del traspaso' })
-  @IsNotEmpty()
-  request_date: Date;
+  @ApiProperty({ description: 'Fecha de solicitud del traspaso', required: false })
+  @IsOptional()
+  request_date?: Date;
 }

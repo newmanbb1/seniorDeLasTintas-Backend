@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { instanceToPlain } from 'class-transformer';
 import { IsNull, Like, Repository } from 'typeorm';
 import {
   StockTransfer,
@@ -110,7 +111,11 @@ export class StockTransferService {
     }
 
     const stockTransfer = this.stockTransferRepository.create({
-      ...dto,
+      origin_branch: { id: dto.origin_branch_id } as Branch,
+      destination_branch: { id: dto.destination_branch_id } as Branch,
+      supply: { id: dto.supply_id } as Supply,
+      quantity: dto.quantity,
+      request_date: dto.request_date ?? new Date(),
       status: StockTransferStatus.InTransit,
       created_by: userId,
     });
@@ -133,16 +138,19 @@ export class StockTransferService {
       status,
     } = filters;
 
-    const where: any = { deleted_at: IsNull() };
+    let where: any = {};
 
     if (
       userContext &&
       this.isSecretaria(userContext.role) &&
       userContext.branch_id
     ) {
-      where.origin_branch = { id: userContext.branch_id };
-      where.destination_branch = { id: userContext.branch_id };
+      where = [
+        { origin_branch: { id: userContext.branch_id }, deleted_at: IsNull() },
+        { destination_branch: { id: userContext.branch_id }, deleted_at: IsNull() },
+      ];
     } else {
+      where = { deleted_at: IsNull() };
       if (origin_branch_id) {
         where.origin_branch = { id: origin_branch_id };
       }
@@ -151,10 +159,18 @@ export class StockTransferService {
       }
     }
     if (supply_id) {
-      where.supply = { id: supply_id };
+      if (Array.isArray(where)) {
+        where = where.map(w => ({ ...w, supply: { id: supply_id } }));
+      } else {
+        where.supply = { id: supply_id };
+      }
     }
     if (status) {
-      where.status = status;
+      if (Array.isArray(where)) {
+        where = where.map(w => ({ ...w, status }));
+      } else {
+        where.status = status;
+      }
     }
 
     const [data, total] = await this.stockTransferRepository.findAndCount({
@@ -165,7 +181,9 @@ export class StockTransferService {
       order: { request_date: 'DESC' },
     });
 
-    return { data, meta: { total, limit, offset } };
+    const plainData = data.map(entity => instanceToPlain(entity));
+
+    return { data: plainData as StockTransfer[], meta: { total, limit, offset } };
   }
 
   async findOne(id: string, userContext?: UserContext): Promise<StockTransfer> {

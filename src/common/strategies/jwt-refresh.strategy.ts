@@ -11,6 +11,7 @@ export interface JwtRefreshPayload {
   email: string;
   role: string;
   type: 'refresh';
+  jti?: string;
   branch_id?: string;
 }
 

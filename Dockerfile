@@ -1,15 +1,21 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json ./
+RUN npm ci
 
-RUN npm ci --only=production
+COPY . .
+RUN npm run build
 
-COPY dist/ ./dist/
-COPY node_modules/ ./node_modules/
-COPY src/data-source.ts ./src/data-source.ts
-COPY src/migrations/ ./src/migrations/
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache tzdata
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
 COPY .env ./
 COPY uploads/ ./uploads/
 

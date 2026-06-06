@@ -18,6 +18,9 @@ export class RefreshToken extends BaseEntity {
   @Column({ type: 'timestamp' })
   expires_at: Date;
 
+  @Column({ type: 'varchar', nullable: true })
+  jti: string;
+
   @Column({ type: 'boolean', default: false })
   revoked: boolean;
 }

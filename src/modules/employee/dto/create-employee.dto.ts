@@ -35,6 +35,7 @@ export class CreateEmployeeDto {
   position: string;
 
   @ApiProperty({ description: 'UUID de la sucursal' })
+  @IsNotEmpty()
   @IsUUID()
   branch_id: string;
 

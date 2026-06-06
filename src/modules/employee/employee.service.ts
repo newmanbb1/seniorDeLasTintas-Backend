@@ -71,8 +71,11 @@ export class EmployeeService {
 
     const hashedPin = await bcrypt.hash(dto.access_pin, 10);
     const employee = this.employeeRepository.create({
-      ...dto,
+      full_name: dto.full_name,
       access_pin: hashedPin,
+      position: dto.position,
+      active: dto.active,
+      branch: { id: branch_id },
       created_by: userId,
     });
     return this.employeeRepository.save(employee);

@@ -4,8 +4,10 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
-  Query,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -17,6 +19,7 @@ import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { LoginPinDto } from './dto/login-pin.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -126,6 +129,24 @@ export class AuthController {
       success: true,
       data: result,
       message: 'Perfil obtenido correctamente',
+    };
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Actualizar usuario (admin only)' })
+  async updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+    @GetUser('id') userId: string,
+  ) {
+    const result = await this.authService.updateUser(id, dto, userId);
+    return {
+      success: true,
+      data: result,
+      message: 'Usuario actualizado correctamente',
     };
   }
 

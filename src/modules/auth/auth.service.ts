@@ -17,6 +17,7 @@ import { RegisterAdminDto } from './dto/register-admin.dto';
 import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
 import { LoginPinDto } from './dto/login-pin.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import {
   JwtPayload,
   JwtRefreshPayload,
@@ -189,17 +190,21 @@ export class AuthService {
         })(),
       });
 
-      if (payload.type !== 'refresh') {
+      if (payload.type !== 'refresh' || !payload.jti) {
         throw new UnauthorizedException('Token inválido');
       }
 
       const storedToken = await this.refreshTokenRepository.findOne({
-        where: { user_id: payload.sub, token: refreshToken, revoked: false },
+        where: { user_id: payload.sub, jti: payload.jti, revoked: false },
         relations: ['user'],
       });
 
-      if (!storedToken || storedToken.expires_at < new Date()) {
-        throw new UnauthorizedException('Refresh token expirado oRevocado');
+      if (!storedToken) {
+        throw new UnauthorizedException('Refresh token expirado o revocado');
+      }
+
+      if (storedToken.expires_at < new Date()) {
+        throw new UnauthorizedException('Refresh token expirado');
       }
 
       const user = storedToken.user;
@@ -240,6 +245,26 @@ export class AuthService {
     return result;
   }
 
+  async updateUser(
+    id: string,
+    dto: UpdateUserDto,
+    userId: string,
+  ): Promise<Partial<User>> {
+    const user = await this.userRepository.findOne({
+      where: { id, deleted_at: IsNull() },
+    });
+    if (!user) {
+      throw new NotFoundException(`Usuario con ID "${id}" no encontrado`);
+    }
+
+    if (dto.active !== undefined) user.active = dto.active;
+    user.updated_by = userId;
+
+    await this.userRepository.save(user);
+    const { password, ...result } = user;
+    return result;
+  }
+
   private async generateTokens(user: User): Promise<{
     access_token: string;
     refresh_token: string;
@@ -260,12 +285,18 @@ export class AuthService {
       email: user.email,
       role: user.role,
       type: 'refresh',
+      jti: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
       branch_id: user.branch_id || undefined,
     };
 
-    const access_token = this.jwtService.sign(payload);
+    const access_token = this.jwtService.sign(payload, {
+      expiresIn: this.getAccessTokenExpiry() as any,
+    });
 
-    const refresh_token = this.jwtService.sign(refreshPayload);
+    const refresh_token = this.jwtService.sign(refreshPayload, {
+      expiresIn:
+        (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as any,
+    });
 
     const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
     const expiresAt = this.getRefreshTokenExpiry();
@@ -273,6 +304,7 @@ export class AuthService {
     const refreshTokenEntity = this.refreshTokenRepository.create({
       user_id: user.id,
       token: hashedRefreshToken,
+      jti: refreshPayload.jti,
       expires_at: expiresAt,
       revoked: false,
       created_by: user.id,

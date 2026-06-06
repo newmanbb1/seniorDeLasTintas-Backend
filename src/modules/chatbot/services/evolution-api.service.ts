@@ -112,6 +112,7 @@ export class EvolutionApiService implements OnModuleInit {
         instanceName: this.instanceName,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
+        clientName: 'senorbot',
       });
 
       this.evolutionAvailable = true;
@@ -352,32 +353,28 @@ export class EvolutionApiService implements OnModuleInit {
     qrcode?: string;
   }> {
     try {
-      // Delete existing instance if present
       try {
         await this.client.delete(`/instance/delete/${this.instanceName}`);
         this.logger.log(`Instancia ${this.instanceName} eliminada para recrear`);
-        await this.delay(2000);
       } catch {
         this.logger.log(`Instancia ${this.instanceName} no existía, creando nueva`);
       }
+
+      await this.delay(2000);
 
       await this.client.post('/instance/create', {
         instanceName: this.instanceName,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
-        syncFullHistory: true,
-        alwaysOnline: true,
       });
-      await this.delay(3000);
 
       this.evolutionAvailable = true;
+      await this.delay(3000);
 
-      const restartRes = await this.client.post(
-        `/instance/restart/${this.instanceName}`,
-        {},
+      const connectRes = await this.client.get<{ base64?: string; pairingCode?: string; code?: string }>(
+        `/instance/connect/${this.instanceName}`,
       );
-      const data = restartRes.data as Record<string, any>;
-      const qrcodeBase64 = data?.base64 as string | undefined;
+      const qrcodeBase64 = connectRes.data?.base64 as string | undefined;
 
       await this.configureWebhook();
 

@@ -58,14 +58,6 @@ export class BranchService {
 
     const where: any = { deleted_at: IsNull() };
 
-    if (
-      userContext &&
-      userContext.role === UserRole.SECRETARIA &&
-      userContext.branch_id
-    ) {
-      where.id = userContext.branch_id;
-    }
-
     if (name) {
       where.name = Like(`%${name}%`);
     }
@@ -83,17 +75,7 @@ export class BranchService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string, userContext?: UserContext): Promise<Branch> {
-    if (
-      userContext &&
-      userContext.role === UserRole.SECRETARIA &&
-      userContext.branch_id
-    ) {
-      if (id !== userContext.branch_id) {
-        throw new ForbiddenException('No tienes acceso a esta sucursal');
-      }
-    }
-
+  async findOne(id: string, _userContext?: UserContext): Promise<Branch> {
     const branch = await this.branchRepository.findOne({
       where: { id, deleted_at: IsNull() },
     });

@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import type {
@@ -33,6 +34,8 @@ function mapValidationEntry(entry: unknown): ApiErrorItem {
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
@@ -46,6 +49,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return res.status(status).json(body);
     }
 
+    this.logger.error(
+      'Unhandled exception',
+      exception instanceof Error ? exception.stack : String(exception),
+    );
     const body: ApiErrorBody = {
       success: false,
       message: 'Internal server error',
