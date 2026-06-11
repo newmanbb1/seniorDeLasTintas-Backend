@@ -9,8 +9,9 @@ import {
   Patch,
   Post,
   UseGuards,
-  Request,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -83,8 +84,9 @@ export class AuthController {
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login de empleado (solo PIN)' })
-  async loginPin(@Body() dto: LoginPinDto) {
-    const result = await this.authService.loginPin(dto);
+  async loginPin(@Body() dto: LoginPinDto, @Req() req: Request) {
+    const clientIp = req.ip;
+    const result = await this.authService.loginPin(dto, clientIp);
     return {
       success: true,
       data: result,
@@ -110,7 +112,7 @@ export class AuthController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar sesión (revocar refresh token)' })
-  async logout(@Request() req: any) {
+  async logout(@Req() req: any) {
     const result = await this.authService.logout(req.user.id);
     return {
       success: true,
@@ -123,7 +125,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener perfil del usuario actual' })
-  async getProfile(@Request() req: any) {
+  async getProfile(@Req() req: any) {
     const result = await this.authService.getProfile(req.user.id);
     return {
       success: true,
@@ -155,7 +157,7 @@ export class AuthController {
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Listar todas las secretarias (solo admin)' })
-  async findAllSecretarias(@Request() req: any) {
+  async findAllSecretarias(@Req() req: any) {
     const { limit, offset, branch_id, active } = req.query;
     const result = await this.authService.findAllSecretarias(
       limit ? parseInt(limit) : 10,

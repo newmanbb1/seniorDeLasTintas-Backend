@@ -113,6 +113,7 @@ services:
       - INSTANCE_API_KEY=${INSTANCE_API_KEY}
       - INSTANCE_NAME=${INSTANCE_NAME}
       - SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
+      - ALLOWED_IPS=${ALLOWED_IPS}
     depends_on:
       backend-db:
         condition: service_healthy

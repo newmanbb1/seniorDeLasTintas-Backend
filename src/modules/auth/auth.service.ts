@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as ipaddr from 'ipaddr.js';
 import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Employee } from '../employee/entities/employee.entity';
@@ -131,12 +132,41 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  async loginPin(dto: LoginPinDto): Promise<{
+  private validateIpAccess(clientIp: string): void {
+    const allowedIps = this.configService.get<string>('ALLOWED_IPS', '');
+    if (!allowedIps || allowedIps.trim() === '') {
+      return;
+    }
+
+    const addr = ipaddr.parse(clientIp);
+    const ranges = allowedIps.split(',').map((r) => r.trim()).filter(Boolean);
+
+    const isAllowed = ranges.some((cidr) => {
+      try {
+        const range = ipaddr.parseCIDR(cidr);
+        return addr.match(range);
+      } catch {
+        return false;
+      }
+    });
+
+    if (!isAllowed) {
+      throw new ForbiddenException(
+        'Acceso permitido solo desde la red WiFi de la empresa',
+      );
+    }
+  }
+
+  async loginPin(dto: LoginPinDto, clientIp?: string): Promise<{
     access_token: string;
     employee_id: string;
     employee_name: string;
     branch_name: string;
   }> {
+    if (clientIp) {
+      this.validateIpAccess(clientIp);
+    }
+
     const employees = await this.employeeRepository.find({
       where: { active: true, deleted_at: IsNull() },
       relations: ['branch'],

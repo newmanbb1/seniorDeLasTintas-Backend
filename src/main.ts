@@ -1,6 +1,7 @@
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import {
@@ -12,7 +13,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import helmet from 'helmet';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.use(
     helmet({
@@ -43,6 +44,8 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api');
+
+  app.set('trust proxy', 1);
 
   app.useGlobalPipes(
     new ValidationPipe({
