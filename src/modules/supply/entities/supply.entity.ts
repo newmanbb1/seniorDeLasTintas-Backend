@@ -31,6 +31,18 @@ export class Supply extends BaseEntity {
   @Column({ type: 'int', nullable: true })
   umbral_min: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  sale_price: number;
+
+  @Column({ type: 'varchar', length: 255 })
+  brand: string;
+
+  @Column({ type: 'text', nullable: true })
+  compatibility: string;
+
+  @Column({ type: 'text', nullable: true })
+  commercial_description: string;
+
   @OneToMany(() => Inventory, (inventory) => inventory.supply)
   inventories: Inventory[];
 

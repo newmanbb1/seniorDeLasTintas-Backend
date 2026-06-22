@@ -3,9 +3,13 @@ import { WhatsAppSession } from './whatsapp-session.entity';
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 
 export enum ChatbotIntention {
+  Saludo = 'Saludo',
+  CategoriaTintas = 'Categoria_Tintas',
+  CategoriaToner = 'Categoria_Toner',
+  CategoriaServicioTecnico = 'Categoria_Servicio_Tecnico',
+  CategoriaRepuesto = 'Categoria_Repuesto',
   ConsultarStock = 'Consultar_Stock',
   ConsultarHorario = 'Consultar_Horario',
-  ConsultarUbicacion = 'Consultar_Ubicacion',
   ConsultarAsistencia = 'Consultar_Asistencia',
   MenuPrincipal = 'Menu_Principal',
   Unknown = 'Unknown',

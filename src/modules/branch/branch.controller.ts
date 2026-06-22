@@ -30,6 +30,7 @@ import { UpdateBranchDto } from './dto/update-branch.dto';
 import { FilterBranch } from './dto/filter-branch.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import { Roles, GetUser } from '../../common/decorators';
 import { UserRole } from '../auth/entities/user.entity';
 
@@ -41,6 +42,14 @@ import { UserRole } from '../auth/entities/user.entity';
 @ApiBearerAuth()
 export class BranchController {
   constructor(private readonly branchService: BranchService) {}
+
+  @Get('public')
+  @AllowAnonymous()
+  @ApiOperation({ summary: 'Public endpoint - list active branches for storefront/vitrina' })
+  @ApiOkWrapped()
+  async findAllPublic() {
+    return ok(await this.branchService.findAllPublic());
+  }
 
   @Post()
   @Roles(UserRole.ADMIN)

@@ -67,6 +67,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login de administrador (email + password)' })

@@ -10,6 +10,7 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -46,6 +47,7 @@ export class ChatbotController {
     return this.conversationService.subscribe();
   }
 
+  @SkipThrottle()
   @Post('webhook')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -164,6 +166,7 @@ export class ChatbotController {
     }
   }
 
+  @SkipThrottle()
   @Post('webhook/messages-upsert')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -196,6 +199,7 @@ export class ChatbotController {
     }
   }
 
+  @SkipThrottle()
   @Post('webhook/messages-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -213,6 +217,7 @@ export class ChatbotController {
     }
   }
 
+  @SkipThrottle()
   @Post('webhook/chats-upsert')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -227,6 +232,7 @@ export class ChatbotController {
     }
   }
 
+  @SkipThrottle()
   @Post('webhook/chats-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -236,6 +242,7 @@ export class ChatbotController {
     return { success: true };
   }
 
+  @SkipThrottle()
   @Post('webhook/contacts-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -245,6 +252,7 @@ export class ChatbotController {
     return { success: true };
   }
 
+  @SkipThrottle()
   @Post('webhook/connection-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -263,6 +271,7 @@ export class ChatbotController {
     return { success: true };
   }
 
+  @SkipThrottle()
   @Post('webhook/qrcode-updated')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -279,6 +288,7 @@ export class ChatbotController {
     return { success: true };
   }
 
+  @SkipThrottle()
   @Post('webhook/presence-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -373,23 +383,21 @@ export class ChatbotController {
     );
   }
 
+  @SkipThrottle()
   @Post('test')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Enviar mensaje de prueba (Admin only)' })
+  @ApiOperation({ summary: 'Enviar mensaje de prueba' })
   @ApiBody({ schema: { type: 'object', properties: { phone: { type: 'string', example: '59167645041' }, message: { type: 'string', example: 'Hola' } } } })
   @ApiOkWrapped()
   async sendTestMessage(@Body() body: { phone: string; message: string }) {
     console.log(
       `Test message - Phone: ${body.phone}, Message: ${body.message}`,
     );
-    await this.chatbotService.processMessage(
+    const response = await this.chatbotService.processMessage(
       body.phone,
       body.message,
       'Test User',
     );
-    return ok({ success: true });
+    return ok({ response });
   }
 
   @Get('status')

@@ -16,7 +16,6 @@ RUN apk add --no-cache tzdata
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
-COPY .env ./
 COPY uploads/ ./uploads/
 
 EXPOSE 3000

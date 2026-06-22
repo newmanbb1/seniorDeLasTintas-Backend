@@ -25,7 +25,7 @@ export class WhatsAppSessionService {
       session = this.sessionRepository.create({
         phone_number: phoneNumber,
         profile_name: profileName,
-        flow_state: WhatsAppFlowState.MenuPrincipal,
+        flow_state: WhatsAppFlowState.SeleccionandoCategoria,
         last_interaction: new Date(),
       });
       await this.sessionRepository.save(session);
@@ -48,7 +48,7 @@ export class WhatsAppSessionService {
   }
 
   async resetToMenu(phoneNumber: string): Promise<WhatsAppSession> {
-    return this.updateFlowState(phoneNumber, WhatsAppFlowState.MenuPrincipal);
+    return this.updateFlowState(phoneNumber, WhatsAppFlowState.SeleccionandoCategoria);
   }
 
   async getSession(phoneNumber: string): Promise<WhatsAppSession | null> {

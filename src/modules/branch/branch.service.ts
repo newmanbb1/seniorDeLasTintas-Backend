@@ -75,6 +75,14 @@ export class BranchService {
     return { data, meta: { total, limit, offset } };
   }
 
+  async findAllPublic(): Promise<Partial<Branch>[]> {
+    return this.branchRepository.find({
+      where: { deleted_at: IsNull() },
+      select: ['id', 'name', 'address', 'opening_hours', 'location_link'],
+      order: { name: 'ASC' },
+    });
+  }
+
   async findOne(id: string, _userContext?: UserContext): Promise<Branch> {
     const branch = await this.branchRepository.findOne({
       where: { id, deleted_at: IsNull() },

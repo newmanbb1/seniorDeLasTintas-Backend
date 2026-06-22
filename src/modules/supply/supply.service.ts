@@ -103,6 +103,10 @@ export class SupplyService {
     if (dto.umbral_min !== undefined) supply.umbral_min = dto.umbral_min;
     if (dto.images !== undefined) supply.images = dto.images;
     if (dto.videos !== undefined) supply.videos = dto.videos;
+    if (dto.sale_price !== undefined) supply.sale_price = dto.sale_price;
+    if (dto.brand !== undefined) supply.brand = dto.brand;
+    if (dto.compatibility !== undefined) supply.compatibility = dto.compatibility;
+    if (dto.commercial_description !== undefined) supply.commercial_description = dto.commercial_description;
     supply.updated_by = userId;
     return this.supplyRepository.save(supply);
   }

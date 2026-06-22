@@ -2,11 +2,9 @@ import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
 import { ChatbotLog } from './chatbot-log.entity';
 
 export enum WhatsAppFlowState {
-  MenuPrincipal = 'Menu_Principal',
+  SeleccionandoCategoria = 'Seleccionando_Categoria',
   ConsultarStock = 'Consultar_Stock',
-  Horarios = 'Horarios',
   ConsultarAsistencia = 'Consultar_Asistencia',
-  EsperandoOpcion = 'Esperando_Opcion',
 }
 
 @Entity('whatsapp_session')
@@ -20,7 +18,7 @@ export class WhatsAppSession {
   @Column({
     type: 'enum',
     enum: WhatsAppFlowState,
-    default: WhatsAppFlowState.MenuPrincipal,
+    default: WhatsAppFlowState.SeleccionandoCategoria,
   })
   flow_state: WhatsAppFlowState;
 

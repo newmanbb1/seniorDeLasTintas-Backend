@@ -54,6 +54,13 @@ export class AuthService {
     refresh_token: string;
     user: Partial<User>;
   }> {
+    const existingAdmin = await this.userRepository.findOne({
+      where: { role: UserRole.ADMIN, deleted_at: IsNull() },
+    });
+    if (existingAdmin) {
+      throw new ForbiddenException('Ya existe un administrador. No se permite otro registro.');
+    }
+
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -209,15 +216,12 @@ export class AuthService {
     refreshToken: string,
   ): Promise<{ access_token: string; refresh_token: string }> {
     try {
+      const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+      if (!refreshSecret) {
+        throw new Error('JWT_REFRESH_SECRET no configurado en variables de entorno');
+      }
       const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken, {
-        secret:
-          (() => {
-          const secret = this.configService.get<string>('JWT_SECRET');
-          if (!secret) {
-            throw new Error('JWT_SECRET no configurado en variables de entorno');
-          }
-          return secret;
-        })(),
+        secret: refreshSecret,
       });
 
       if (payload.type !== 'refresh' || !payload.jti) {
@@ -323,7 +327,9 @@ export class AuthService {
       expiresIn: this.getAccessTokenExpiry() as any,
     });
 
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
     const refresh_token = this.jwtService.sign(refreshPayload, {
+      secret: refreshSecret,
       expiresIn:
         (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as any,
     });
