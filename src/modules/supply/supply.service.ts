@@ -50,11 +50,12 @@ export class SupplyService {
 
     const where: any = { deleted_at: IsNull() };
 
+    const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
     if (name) {
-      where.name = Like(`%${name}%`);
+      where.name = Like(`%${sanitizeLike(name)}%`);
     }
     if (category) {
-      where.category = Like(`%${category}%`);
+      where.category = Like(`%${sanitizeLike(category)}%`);
     }
 
     const [data, total] = await this.supplyRepository.findAndCount({
@@ -72,7 +73,7 @@ export class SupplyService {
       where: { id, deleted_at: IsNull() },
     });
     if (!supply) {
-      throw new NotFoundException(`Insumo con ID "${id}" no encontrado`);
+      throw new NotFoundException('Insumo no encontrado');
     }
     return supply;
   }

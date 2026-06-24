@@ -7,9 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, MoreThan } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import * as ipaddr from 'ipaddr.js';
 import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -68,7 +69,7 @@ export class AuthService {
       throw new BadRequestException('El email ya está registrado');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     const user = this.userRepository.create({
       email: dto.email,
@@ -95,10 +96,10 @@ export class AuthService {
       where: { email: dto.email, deleted_at: IsNull() },
     });
     if (existingUser) {
-      throw new BadRequestException('El email ya está registrado');
+      throw new BadRequestException('Solicitud inválida');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     const user = this.userRepository.create({
       email: dto.email,
@@ -128,7 +129,7 @@ export class AuthService {
     }
 
     if (!user.active) {
-      throw new ForbiddenException('Usuario inactivo');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
@@ -164,6 +165,9 @@ export class AuthService {
     }
   }
 
+  private readonly MAX_FAILED_ATTEMPTS = 5;
+  private readonly LOCKOUT_DURATION_MINUTES = 15;
+
   async loginPin(dto: LoginPinDto, clientIp?: string): Promise<{
     access_token: string;
     employee_id: string;
@@ -174,41 +178,75 @@ export class AuthService {
       this.validateIpAccess(clientIp);
     }
 
+    const now = new Date();
+
     const employees = await this.employeeRepository.find({
       where: { active: true, deleted_at: IsNull() },
       relations: ['branch'],
     });
 
     let matchedEmployee: Employee | null = null;
+    const failedIds: string[] = [];
+
     for (const emp of employees) {
+      if (emp.locked_until && emp.locked_until > now) {
+        continue;
+      }
       const isMatch = await bcrypt.compare(dto.pin, emp.access_pin);
       if (isMatch) {
         matchedEmployee = emp;
         break;
       }
+      failedIds.push(emp.id);
     }
 
-    const employee = matchedEmployee;
-    if (!employee) {
+    if (!matchedEmployee) {
+      const MAX_ATTEMPTS = this.MAX_FAILED_ATTEMPTS;
+      const LOCK_MINUTES = this.LOCKOUT_DURATION_MINUTES;
+
+      for (const empId of failedIds) {
+        await this.employeeRepository.increment(
+          { id: empId },
+          'failed_attempts',
+          1,
+        );
+        const emp = employees.find((e) => e.id === empId);
+        if (emp && emp.failed_attempts + 1 >= MAX_ATTEMPTS) {
+          await this.employeeRepository.update(
+            { id: empId },
+            {
+              locked_until: new Date(now.getTime() + LOCK_MINUTES * 60 * 1000),
+            },
+          );
+        }
+      }
+
       throw new UnauthorizedException('PIN inválido o empleado inactivo');
     }
 
+    await this.employeeRepository.update(
+      { id: matchedEmployee.id },
+      { failed_attempts: 0, locked_until: null },
+    );
+
     const payload: JwtPayload = {
-      sub: employee.id,
-      id: employee.id,
-      email: `employee-${employee.id}`,
+      sub: matchedEmployee.id,
+      id: matchedEmployee.id,
+      email: `employee-${matchedEmployee.id}`,
       role: 'employee',
       type: 'employee',
-      employee_id: employee.id,
+      employee_id: matchedEmployee.id,
     };
 
-    const access_token = this.jwtService.sign(payload);
+    const access_token = this.jwtService.sign(payload, {
+      expiresIn: '8h',
+    });
 
     return {
       access_token,
-      employee_id: employee.id,
-      employee_name: employee.full_name,
-      branch_name: employee.branch?.name || 'Sin sucursal',
+      employee_id: matchedEmployee.id,
+      employee_name: matchedEmployee.full_name,
+      branch_name: matchedEmployee.branch?.name || 'Sin sucursal',
     };
   }
 
@@ -235,6 +273,15 @@ export class AuthService {
 
       if (!storedToken) {
         throw new UnauthorizedException('Refresh token expirado o revocado');
+      }
+
+      const isTokenValid = await bcrypt.compare(refreshToken, storedToken.token);
+      if (!isTokenValid) {
+        await this.refreshTokenRepository.update(
+          { user_id: payload.sub, revoked: false },
+          { revoked: true },
+        );
+        throw new UnauthorizedException('Refresh token inválido');
       }
 
       if (storedToken.expires_at < new Date()) {
@@ -275,8 +322,7 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-    const { password, ...result } = user;
-    return result;
+    return user;
   }
 
   async updateUser(
@@ -288,15 +334,14 @@ export class AuthService {
       where: { id, deleted_at: IsNull() },
     });
     if (!user) {
-      throw new NotFoundException(`Usuario con ID "${id}" no encontrado`);
+      throw new NotFoundException('Usuario no encontrado');
     }
 
     if (dto.active !== undefined) user.active = dto.active;
     user.updated_by = userId;
 
     await this.userRepository.save(user);
-    const { password, ...result } = user;
-    return result;
+    return user;
   }
 
   private async generateTokens(user: User): Promise<{
@@ -319,7 +364,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       type: 'refresh',
-      jti: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      jti: crypto.randomUUID(),
       branch_id: user.branch_id || undefined,
     };
 
@@ -334,7 +379,7 @@ export class AuthService {
         (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as any,
     });
 
-    const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
+    const hashedRefreshToken = await bcrypt.hash(refresh_token, 12);
     const expiresAt = this.getRefreshTokenExpiry();
 
     const refreshTokenEntity = this.refreshTokenRepository.create({
@@ -347,11 +392,10 @@ export class AuthService {
     });
     await this.refreshTokenRepository.save(refreshTokenEntity);
 
-    const { password, ...userWithoutPassword } = user;
     return {
       access_token,
       refresh_token,
-      user: userWithoutPassword,
+      user,
     };
   }
 

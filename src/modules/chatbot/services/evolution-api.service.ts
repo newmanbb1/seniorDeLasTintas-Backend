@@ -12,6 +12,9 @@ export class EvolutionApiService implements OnModuleInit {
   private readonly retryDelay = 3000;
 
   private readonly webhookSecret: string;
+  private lastQrCode: string | null = null;
+  private lastQrTime: number = 0;
+  private readonly qrCooldownMs = 20000;
 
   constructor(private readonly configService: ConfigService) {
     const evolutionUrl = this.configService.get<string>('EVOLUTION_URL');
@@ -36,14 +39,17 @@ export class EvolutionApiService implements OnModuleInit {
         'Content-Type': 'application/json',
         apikey: apiKey,
       },
-      timeout: 15000,
+      timeout: 300000,
     });
   }
 
   async onModuleInit() {
-    this.logger.log('Iniciando verificación de Evolution API...');
-    await this.waitForEvolution();
-    await this.initializeInstanceWithRetry();
+    this.logger.log('Iniciando verificación de Evolution API en segundo plano...');
+    this.waitForEvolution()
+      .then(() => this.initializeInstanceWithRetry())
+      .catch((err) =>
+        this.logger.error(`Error init Evolution API: ${err.message}`),
+      );
   }
 
   private async waitForEvolution() {
@@ -108,19 +114,27 @@ export class EvolutionApiService implements OnModuleInit {
 
   private async createInstance() {
     try {
-      await this.client.post('/instance/create', {
+      this.client.post('/instance/create', {
         instanceName: this.instanceName,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
         clientName: 'senorbot',
-      });
+      }).catch((err) =>
+        this.logger.warn(
+          `Create instance response (non-blocking): ${err.message}`,
+        ),
+      );
 
       this.evolutionAvailable = true;
 
-      this.logger.log(`Instancia ${this.instanceName} creada con QR`);
+      this.logger.log(
+        `Instancia ${this.instanceName} solicitada, esperando QR...`,
+      );
 
-      await this.delay(2000);
-      await this.configureWebhook();
+      await this.delay(5000);
+      this.configureWebhook().catch((err) =>
+        this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
+      );
     } catch (error: any) {
       this.logger.error(
         `Error creando instancia: ${error.response?.data || error.message}`,
@@ -353,35 +367,104 @@ export class EvolutionApiService implements OnModuleInit {
     qrcode?: string;
   }> {
     try {
+      // Primero verificar si la instancia ya existe
       try {
-        await this.client.delete(`/instance/delete/${this.instanceName}`);
-        this.logger.log(`Instancia ${this.instanceName} eliminada para recrear`);
-      } catch {
-        this.logger.log(`Instancia ${this.instanceName} no existía, creando nueva`);
+        const state = await this.client.get<{ instance: { state: string } }>(
+          `/instance/connectionState/${this.instanceName}`,
+        );
+
+        const currentState = state.data?.instance?.state;
+        this.logger.log(`Instancia ${this.instanceName} existe (estado: ${currentState})`);
+
+        if (currentState === 'open') {
+          this.logger.log(`Instancia ${this.instanceName} ya está conectada`);
+          await this.configureWebhook();
+          return { success: true, message: 'Ya conectado' };
+        }
+
+        // Si ya tenemos un QR reciente, devolverlo sin regenerar
+        const elapsed = Date.now() - this.lastQrTime;
+        if (this.lastQrCode && elapsed < this.qrCooldownMs) {
+          this.logger.log(`QR reutilizado (${Math.round(elapsed / 1000)}s)`);
+          return { success: true, message: 'Escanea el QR.', qrcode: this.lastQrCode };
+        }
+
+        // Intentar obtener QR existente sin regenerar
+        try {
+          const qrRes = await this.client.get<{ base64?: string; qrcode?: string }>(
+            `/instance/qrcode/${this.instanceName}`,
+          );
+          const existingQr = (qrRes.data?.base64 || qrRes.data?.qrcode) as string | undefined;
+          if (existingQr) {
+            this.lastQrCode = existingQr;
+            this.lastQrTime = Date.now();
+            this.logger.log(`QR existente devuelto`);
+            this.configureWebhook().catch((err) =>
+              this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
+            );
+            return { success: true, message: 'Escanea el QR.', qrcode: existingQr };
+          }
+        } catch {
+          this.logger.log(`No hay QR existente, generando nuevo...`);
+        }
+
+        // Solo regenerar si no hay QR válido
+        this.logger.log(`Generando nuevo QR para ${this.instanceName}...`);
+        const connectRes = await this.client.get<{ base64?: string; pairingCode?: string; code?: string }>(
+          `/instance/connect/${this.instanceName}`,
+        );
+        const qrcodeBase64 = (connectRes.data?.base64 || connectRes.data?.code) as string | undefined;
+        if (qrcodeBase64) {
+          this.lastQrCode = qrcodeBase64;
+          this.lastQrTime = Date.now();
+        }
+
+        this.configureWebhook().catch((err) =>
+          this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
+        );
+
+        this.evolutionAvailable = true;
+        this.logger.log(`QR ${qrcodeBase64 ? 'obtenido' : 'no disponible'} para ${this.instanceName}`);
+        return {
+          success: true,
+          message: qrcodeBase64 ? 'Escanea el QR.' : 'Esperando QR...',
+          qrcode: qrcodeBase64,
+        };
+      } catch (error: any) {
+        if (error.response?.status !== 404) throw error;
       }
 
-      await this.delay(2000);
+      // No existe -> crear nueva (non-blocking)
+      this.logger.log(`Instancia ${this.instanceName} no existe, creando...`);
 
-      await this.client.post('/instance/create', {
+      this.client.post('/instance/create', {
         instanceName: this.instanceName,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
-      });
+      }).catch((err) =>
+        this.logger.warn(`Create (non-blocking): ${err.message}`),
+      );
 
       this.evolutionAvailable = true;
-      await this.delay(3000);
+      await this.delay(5000);
 
       const connectRes = await this.client.get<{ base64?: string; pairingCode?: string; code?: string }>(
         `/instance/connect/${this.instanceName}`,
       );
-      const qrcodeBase64 = connectRes.data?.base64 as string | undefined;
+      const qrcodeBase64 = (connectRes.data?.base64 || connectRes.data?.code) as string | undefined;
+      if (qrcodeBase64) {
+        this.lastQrCode = qrcodeBase64;
+        this.lastQrTime = Date.now();
+      }
 
-      await this.configureWebhook();
+      this.configureWebhook().catch((err) =>
+        this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
+      );
 
-      this.logger.log(`Instancia ${this.instanceName} reconectada. QR: ${!!qrcodeBase64}`);
+      this.logger.log(`Instancia ${this.instanceName} creada. QR: ${!!qrcodeBase64}`);
       return {
         success: true,
-        message: 'Instancia reconectada. Escanea el QR.',
+        message: qrcodeBase64 ? 'Escanea el QR.' : 'Esperando QR...',
         qrcode: qrcodeBase64,
       };
     } catch (error: any) {

@@ -51,14 +51,15 @@ export class CustomerService {
     const { limit = 10, offset = 0, name, phone, nit } = filters;
     const where: any = { deleted_at: IsNull() };
 
+    const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
     if (name) {
-      where.name = Like(`%${name}%`);
+      where.name = Like(`%${sanitizeLike(name)}%`);
     }
     if (phone) {
-      where.phone = Like(`%${phone}%`);
+      where.phone = Like(`%${sanitizeLike(phone)}%`);
     }
     if (nit) {
-      where.nit = Like(`%${nit}%`);
+      where.nit = Like(`%${sanitizeLike(nit)}%`);
     }
 
     const [data, total] = await this.customerRepository.findAndCount({
@@ -76,7 +77,7 @@ export class CustomerService {
       where: { id, deleted_at: IsNull() },
     });
     if (!customer) {
-      throw new NotFoundException(`Cliente con ID "${id}" no encontrado`);
+      throw new NotFoundException('Cliente no encontrado');
     }
     return customer;
   }

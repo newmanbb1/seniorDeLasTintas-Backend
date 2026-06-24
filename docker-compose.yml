@@ -101,33 +101,18 @@ services:
       - "3000:3000"
     env_file:
       - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - DB_HOST=backend-db
-      - DB_PORT=5432
-      - DB_NAME=TintasDB
-      - DB_USERNAME=postgres
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_SYNC=${DB_SYNC:-false}
-      - EVOLUTION_URL=http://evolution:8080
-      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
-      - INSTANCE_API_KEY=${INSTANCE_API_KEY}
-      - INSTANCE_NAME=${INSTANCE_NAME}
-      - SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
-      - ALLOWED_IPS=${ALLOWED_IPS}
     depends_on:
       backend-db:
         condition: service_healthy
-      evolution:
-        condition: service_started
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     networks:
       - app_network
     volumes:
       - uploads_data:/app/uploads
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Frontend React (Nginx)
   frontend:
@@ -153,3 +138,10 @@ volumes:
 networks:
   app_network:
     driver: bridge
+
+# Límites de recursos (aplica con docker stack deploy o --compatibility)
+# x-deploy: &default-deploy
+#   resources:
+#     limits:
+#       cpus: '0.5'
+#       memory: 512M

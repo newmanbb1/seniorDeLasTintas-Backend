@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -24,7 +25,7 @@ import {
   ApiOkWrapped,
   ok,
 } from 'src/common/response';
-import { OrderService } from './order.service';
+import { OrderService, UserContext } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -33,6 +34,15 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';
 import { UserRole } from '../auth/entities/user.entity';
+
+function getUserContext(user: any): UserContext | undefined {
+  if (!user) return undefined;
+  return {
+    userId: user.id,
+    role: user.role,
+    branch_id: user.branch_id,
+  };
+}
 
 @ApiTags('order')
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -50,25 +60,28 @@ export class OrderController {
   @ApiCreatedWrapped()
   async create(
     @Body() createOrderDto: CreateOrderDto,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
-    return ok(await this.orderService.create(createOrderDto, userId));
+    const userContext = getUserContext(user);
+    return ok(await this.orderService.create(createOrderDto, user?.id, userContext));
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'List orders with pagination and filters' })
   @ApiOkWrapped()
-  async findAll(@Query() filters: FilterOrder) {
-    return ok(await this.orderService.findAll(filters));
+  async findAll(@Query() filters: FilterOrder, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.orderService.findAll(filters, userContext));
   }
 
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'Get order by id' })
   @ApiOkWrapped()
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return ok(await this.orderService.findOne(id));
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @GetUser() user: any) {
+    const userContext = getUserContext(user);
+    return ok(await this.orderService.findOne(id, userContext));
   }
 
   @Patch(':id')
@@ -79,9 +92,10 @@ export class OrderController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrderDto: UpdateOrderDto,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
-    return ok(await this.orderService.update(id, updateOrderDto, userId));
+    const userContext = getUserContext(user);
+    return ok(await this.orderService.update(id, updateOrderDto, user?.id, userContext));
   }
 
   @Patch(':id/status')
@@ -92,10 +106,11 @@ export class OrderController {
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrderStatusDto: UpdateOrderStatusDto,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
+    const userContext = getUserContext(user);
     return ok(
-      await this.orderService.updateStatus(id, updateOrderStatusDto, userId),
+      await this.orderService.updateStatus(id, updateOrderStatusDto, user?.id, userContext),
     );
   }
 
@@ -105,8 +120,9 @@ export class OrderController {
   @ApiOkWrapped()
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
-    @GetUser('id') userId: string,
+    @GetUser() user: any,
   ) {
-    return ok(await this.orderService.remove(id, userId));
+    const userContext = getUserContext(user);
+    return ok(await this.orderService.remove(id, user?.id, userContext));
   }
 }

@@ -27,7 +27,7 @@ import { JwtRefreshStrategy } from '../../common/strategies/jwt-refresh.strategy
           return secret;
         })(),
         signOptions: {
-          expiresIn: 10,
+          expiresIn: '15m',
         },
       }),
     }),

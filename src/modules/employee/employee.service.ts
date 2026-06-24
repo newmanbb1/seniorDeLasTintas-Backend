@@ -69,7 +69,7 @@ export class EmployeeService {
       );
     }
 
-    const hashedPin = await bcrypt.hash(dto.access_pin, 10);
+    const hashedPin = await bcrypt.hash(dto.access_pin, 12);
     const employee = this.employeeRepository.create({
       full_name: dto.full_name,
       access_pin: hashedPin,
@@ -182,11 +182,7 @@ export class EmployeeService {
       }
     }
 
-    if (dto.access_pin) {
-      dto.access_pin = await bcrypt.hash(dto.access_pin, 10);
-    }
     if (dto.full_name !== undefined) employee.full_name = dto.full_name;
-    if (dto.access_pin !== undefined) employee.access_pin = dto.access_pin;
     if (dto.position !== undefined) employee.position = dto.position;
     if (dto.branch_id !== undefined) employee.branch = { id: dto.branch_id } as any;
     if (dto.active !== undefined) employee.active = dto.active;

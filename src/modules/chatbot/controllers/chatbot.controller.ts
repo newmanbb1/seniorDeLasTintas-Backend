@@ -7,7 +7,9 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Sse,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -18,7 +20,9 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { JwtService } from '@nestjs/jwt';
 import { Observable } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 import { ApiErrorResponseDto, ApiOkWrapped, ok } from 'src/common/response';
 import { ChatbotService } from '../services/chatbot.service';
 import { ConversationService, MessageEvent } from '../services/conversation.service';
@@ -39,34 +43,47 @@ export class ChatbotController {
     private readonly chatbotService: ChatbotService,
     private readonly conversationService: ConversationService,
     private readonly evolutionApiService: EvolutionApiService,
+    private readonly configService: ConfigService,
+    private readonly jwtService: JwtService,
   ) {}
 
   @Sse('events')
   @ApiOperation({ summary: 'SSE stream de eventos en tiempo real' })
-  events(): Observable<MessageEvent> {
+  events(@Req() req: any): Observable<MessageEvent> {
+    const authHeader = req.headers?.authorization;
+    const queryToken = req.query?.token;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : queryToken;
+
+    if (!token) {
+      throw new UnauthorizedException('Token requerido');
+    }
+    try {
+      const payload = this.jwtService.verify(token);
+      if (!payload || (payload.role !== 'admin' && payload.type !== 'access')) {
+        throw new Error();
+      }
+    } catch {
+      throw new UnauthorizedException('Token inválido o expirado');
+    }
+
     return this.conversationService.subscribe();
   }
 
-  @SkipThrottle()
   @Post('webhook')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para recibir mensajes de Evolution API' })
   async handleWebhook(@Body() payload: any) {
     try {
-      console.log('Webhook recibido:', JSON.stringify(payload, null, 2));
-
       if (!payload || typeof payload !== 'object') {
-        console.log('Payload inválido o vacío');
         return { success: true };
       }
 
       const event = payload.event || payload.type || payload.data?.event;
 
       if (!event) {
-        console.log(
-          'Sin evento en payload, intentando procesar como mensaje directo',
-        );
         if (payload.messages || payload.message) {
           const messages = payload.messages || [payload];
           for (const messageData of messages) {
@@ -76,33 +93,22 @@ export class ChatbotController {
         return { success: true };
       }
 
-      console.log('Evento detectado:', event);
-
       if (
         event === 'messages.upsert' ||
         event === 'message' ||
         event === 'messages.update'
       ) {
-        console.log('=== Procesando evento de mensaje:', event, '===');
         let messageData = payload.data;
 
         if (payload.data?.messages?.[0]) {
           messageData = payload.data.messages[0];
         }
 
-        console.log('messageData:', JSON.stringify(messageData, null, 2));
-
         if (messageData?.message?.conversation) {
-          console.log('Mensaje de texto:', messageData.message.conversation);
           await this.processMessageData(messageData);
         } else if (messageData?.message?.extendedTextMessage?.text) {
-          console.log(
-            'Mensaje extendido:',
-            messageData.message.extendedTextMessage.text,
-          );
           await this.processMessageData(messageData);
         } else if (messageData?.message) {
-          console.log('Otro tipo de mensaje, procesando...');
           await this.processMessageData(messageData);
         }
       } else if (
@@ -112,7 +118,6 @@ export class ChatbotController {
         event === 'CHATS_SET'
       ) {
         const chats = payload.data || [];
-        console.log(`Evento de chats: ${event}, ${chats.length} chats`);
         await this.conversationService.handleChatUpsert(
           Array.isArray(chats) ? chats : [chats],
         );
@@ -124,7 +129,6 @@ export class ChatbotController {
         event === 'CONTACTS_UPSERT'
       ) {
         const contacts = payload.data || [];
-        console.log(`Evento de contactos: ${event}, ${contacts.length} contactos`);
         await this.conversationService.handleContactUpsert(
           Array.isArray(contacts) ? contacts : [contacts],
         );
@@ -134,7 +138,6 @@ export class ChatbotController {
         event === 'CONNECTION_UPDATE' ||
         event === 'connection.update'
       ) {
-        console.log('Evento de conexión:', payload.data);
         const state =
           payload.data?.instance?.state ||
           payload.data?.state;
@@ -146,7 +149,6 @@ export class ChatbotController {
         event === 'QRCODE_UPDATED' ||
         event === 'qrcode_updated'
       ) {
-        console.log('QR actualizado vía webhook general');
         const qrPayload = payload.data || payload;
         const qrObj = qrPayload?.qrcode;
         if (qrObj) {
@@ -166,27 +168,17 @@ export class ChatbotController {
     }
   }
 
-  @SkipThrottle()
   @Post('webhook/messages-upsert')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de messages upsert' })
   async handleMessagesUpsert(@Body() payload: any) {
     try {
-      console.log('=== Messages upsert FULL payload ===');
-      console.log(JSON.stringify(payload, null, 2));
-      console.log('=== End payload ===');
-
       let messageData = payload.data;
 
       if (!messageData && payload.data?.messages?.[0]) {
         messageData = payload.data.messages[0];
       }
-
-      console.log(
-        'Extracted messageData:',
-        JSON.stringify(messageData, null, 2),
-      );
 
       if (messageData) {
         await this.processMessageData(messageData);
@@ -199,69 +191,43 @@ export class ChatbotController {
     }
   }
 
-  @SkipThrottle()
   @Post('webhook/messages-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de messages update' })
-  async handleMessagesUpdate(@Body() payload: any) {
-    try {
-      console.log(
-        'Messages update recibido:',
-        JSON.stringify(payload, null, 2),
-      );
-      return { success: true };
-    } catch (error) {
-      console.error('Error en messages-update:', error);
-      return { success: false };
-    }
+  async handleMessagesUpdate(@Body() _payload: any) {
+    return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/chats-upsert')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de chats upsert' })
-  async handleChatsUpsert(@Body() payload: any) {
-    try {
-      console.log('Chats upsert recibido:', JSON.stringify(payload, null, 2));
-      return { success: true };
-    } catch (error) {
-      console.error('Error en chats-upsert:', error);
-      return { success: false };
-    }
+  async handleChatsUpsert(@Body() _payload: any) {
+    return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/chats-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de chats update' })
-  async handleChatsUpdate(@Body() payload: any) {
-    console.log('Chats update recibido:', JSON.stringify(payload, null, 2));
+  async handleChatsUpdate() {
     return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/contacts-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de contacts update' })
-  async handleContactsUpdate(@Body() payload: any) {
-    console.log('Contacts update recibido:', JSON.stringify(payload, null, 2));
+  async handleContactsUpdate() {
     return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/connection-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de connection update' })
   async handleConnectionUpdate(@Body() payload: any) {
-    console.log(
-      'Connection update recibido:',
-      JSON.stringify(payload, null, 2),
-    );
     if (payload.data?.instance?.state) {
       this.conversationService.emit(
         'connection_status',
@@ -271,13 +237,11 @@ export class ChatbotController {
     return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/qrcode-updated')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de qrcode updated' })
   async handleQrCodeUpdated(@Body() payload: any) {
-    console.log('QR code updated recibido:', JSON.stringify(payload, null, 2));
     const qrObj = payload.data?.qrcode;
     if (qrObj) {
       const qrBase64 = typeof qrObj === 'string' ? qrObj : qrObj.base64;
@@ -288,13 +252,11 @@ export class ChatbotController {
     return { success: true };
   }
 
-  @SkipThrottle()
   @Post('webhook/presence-update')
   @UseGuards(WebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para eventos de presence update' })
-  async handlePresenceUpdate(@Body() payload: any) {
-    console.log('Presence update recibido:', JSON.stringify(payload, null, 2));
+  async handlePresenceUpdate() {
     return { success: true };
   }
 
@@ -304,19 +266,26 @@ export class ChatbotController {
       return;
     }
 
-    if (messageData.key?.fromMe) {
-      console.log('Ignorando mensaje propio (fromMe = true)');
-      return;
-    }
-
-    console.log('=== processMessageData input ===');
-    console.log(JSON.stringify(messageData, null, 2));
-    console.log('=== end ===');
-
     const remoteJid =
       messageData.key?.remoteJidAlt ||
       messageData.key?.remoteJid ||
-      messageData.remoteJid;
+      messageData.remoteJid ||
+      '';
+    const phone = remoteJid.split('@')[0];
+
+    const whitelistEnv = this.configService.get<string>('WHITELIST_NUMBERS') || '';
+    const whitelist = whitelistEnv.split(',').map(n => n.trim().replace(/^591/, '')).filter(Boolean);
+
+    const phoneLocal = phone.replace(/^591/, '');
+
+    if (whitelist.length > 0) {
+      if (!whitelist.includes(phoneLocal)) {
+        return;
+      }
+    } else if (messageData.key?.fromMe) {
+      return;
+    }
+
     const pushName = messageData.pushName || messageData.pushName || '';
     const waMessageId = messageData.key?.id;
 
@@ -339,13 +308,17 @@ export class ChatbotController {
       return;
     }
 
+    const MAX_MSG_LENGTH = 500;
+    if (messageText.length > MAX_MSG_LENGTH) {
+      return;
+    }
+
     if (remoteJid) {
       if (remoteJid.includes('@g.us')) {
-        console.log(`Ignorando mensaje de grupo: ${remoteJid}`);
+        console.log(`Ignorando mensaje de grupo`);
         return;
       }
       const phoneNumber = remoteJid.split('@')[0];
-      console.log(`Procesando mensaje de ${phoneNumber}: ${messageText}`);
 
       await this.conversationService.saveIncomingMessage({
         phoneNumber,
@@ -364,7 +337,10 @@ export class ChatbotController {
   }
 
   @Get('logs')
-  @ApiOperation({ summary: 'Listar logs del chatbot' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Listar logs del chatbot (solo admin)' })
   @ApiOkWrapped()
   async findAllLogs(@Query() filters: FilterChatbotLog) {
     const {
@@ -385,13 +361,13 @@ export class ChatbotController {
 
   @SkipThrottle()
   @Post('test')
-  @ApiOperation({ summary: 'Enviar mensaje de prueba' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Enviar mensaje de prueba (solo admin)' })
   @ApiBody({ schema: { type: 'object', properties: { phone: { type: 'string', example: '59167645041' }, message: { type: 'string', example: 'Hola' } } } })
   @ApiOkWrapped()
   async sendTestMessage(@Body() body: { phone: string; message: string }) {
-    console.log(
-      `Test message - Phone: ${body.phone}, Message: ${body.message}`,
-    );
     const response = await this.chatbotService.processMessage(
       body.phone,
       body.message,
@@ -401,7 +377,10 @@ export class ChatbotController {
   }
 
   @Get('status')
-  @ApiOperation({ summary: 'Estado de conexión de WhatsApp' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Estado de conexión de WhatsApp (solo admin)' })
   async getStatus() {
     const status = await this.evolutionApiService.getInstanceStatus();
     return { state: status?.instance?.state || 'close' };
@@ -470,8 +449,11 @@ export class ChatbotController {
   }
 
   @Post('reconnect')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reconectar instancia de WhatsApp (regenera QR)' })
+  @ApiOperation({ summary: 'Reconectar instancia de WhatsApp (regenera QR, solo admin)' })
   @ApiOkWrapped()
   async reconnect() {
     const result = await this.evolutionApiService.reconnectInstance();

@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SeedService } from './seed.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -18,6 +19,20 @@ import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 @Controller('seed')
 export class SeedController {
   constructor(private readonly seedService: SeedService) {}
+
+  @Post('init')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } })
+  @AllowAnonymous()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Inicializar datos por primera vez (sin auth, solo si no hay admin)' })
+  async init() {
+    const result = await this.seedService.init();
+    return {
+      success: true,
+      data: result.data,
+      message: result.message,
+    };
+  }
 
   @Post('all')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -50,8 +65,10 @@ export class SeedController {
   }
 
   @Get('status')
-  @AllowAnonymous()
-  @ApiOperation({ summary: 'Verificar estado del seed' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verificar estado del seed (solo admin)' })
   async getStatus() {
     const result = await this.seedService.getStatus();
     return {

@@ -1,4 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { ChatbotService } from './services/chatbot.service';
 import { EvolutionApiService } from './services/evolution-api.service';
 import { WhatsAppSessionService } from './services/whatsapp-session.service';
@@ -27,6 +29,13 @@ import { Attendance } from '../attendance/entities/attendance.entity';
       Employee,
       Attendance,
     ]),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+      }),
+    }),
   ],
   controllers: [ChatbotController],
   providers: [

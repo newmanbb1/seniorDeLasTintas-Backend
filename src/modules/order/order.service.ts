@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { Order, OrderStatus } from './entities/order.entity';
@@ -11,6 +11,13 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { FilterOrder } from './dto/filter-order.dto';
+import { UserRole } from '../auth/entities/user.entity';
+
+export interface UserContext {
+  userId: string;
+  role: string;
+  branch_id?: string;
+}
 
 @Injectable()
 export class OrderService {
@@ -33,7 +40,7 @@ export class OrderService {
     return this.orderRepository.metadata.connection;
   }
 
-  async create(dto: CreateOrderDto, userId: string): Promise<Order> {
+  async create(dto: CreateOrderDto, userId: string, userContext?: UserContext): Promise<Order> {
     const supplies = await this.supplyRepository.find({
       where: { deleted_at: IsNull() },
     });
@@ -45,7 +52,7 @@ export class OrderService {
     for (const item of dto.items) {
       const supply = supplyMap.get(item.supply_id);
       if (!supply) {
-        throw new NotFoundException(`Insumo ${item.supply_id} no encontrado`);
+        throw new NotFoundException('Insumo no encontrado');
       }
       const unitPrice = Number(supply.sale_price) || 0;
       const subtotal = unitPrice * item.quantity;
@@ -80,6 +87,7 @@ export class OrderService {
       status: OrderStatus.Pending,
       total,
       notes: dto.notes,
+      branch: userContext?.branch_id ? { id: userContext.branch_id } as any : undefined,
       created_by: userId,
       order_details: details as OrderDetail[],
     });
@@ -87,7 +95,7 @@ export class OrderService {
     return this.orderRepository.save(order);
   }
 
-  async findAll(filters: FilterOrder): Promise<{
+  async findAll(filters: FilterOrder, userContext?: UserContext): Promise<{
     data: Order[];
     meta: { total: number; limit: number; offset: number };
   }> {
@@ -101,7 +109,9 @@ export class OrderService {
     if (client_name) {
       where.client_name = client_name;
     }
-    if (branch_id) {
+    if (userContext?.role === UserRole.SECRETARIA) {
+      where.branch = { id: userContext.branch_id };
+    } else if (branch_id) {
       where.branch = { id: branch_id };
     }
 
@@ -116,19 +126,22 @@ export class OrderService {
     return { data, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string): Promise<Order> {
+  async findOne(id: string, userContext?: UserContext): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id, deleted_at: IsNull() },
       relations: ['order_details', 'order_details.supply', 'branch', 'customer'],
     });
     if (!order) {
-      throw new NotFoundException(`Pedido ${id} no encontrado`);
+      throw new NotFoundException('Pedido no encontrado');
+    }
+    if (userContext?.role === UserRole.SECRETARIA && order.branch?.id !== userContext.branch_id) {
+      throw new NotFoundException('Pedido no encontrado');
     }
     return order;
   }
 
-  async update(id: string, dto: UpdateOrderDto, userId: string): Promise<Order> {
-    const order = await this.findOne(id);
+  async update(id: string, dto: UpdateOrderDto, userId: string, userContext?: UserContext): Promise<Order> {
+    const order = await this.findOne(id, userContext);
 
     if (order.status !== OrderStatus.Pending) {
       throw new BadRequestException('Solo se puede editar pedidos en estado Pendiente');
@@ -152,8 +165,8 @@ export class OrderService {
     return this.orderRepository.save(order);
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string): Promise<Order> {
-    const order = await this.findOne(id);
+  async updateStatus(id: string, dto: UpdateOrderStatusDto, userId: string, userContext?: UserContext): Promise<Order> {
+    const order = await this.findOne(id, userContext);
     const newStatus = dto.status;
     const oldStatus = order.status;
 
@@ -168,7 +181,7 @@ export class OrderService {
         where: { id },
       });
       if (!orderToUpdate) {
-        throw new NotFoundException(`Pedido ${id} no encontrado`);
+        throw new NotFoundException('Pedido no encontrado');
       }
 
       orderToUpdate.status = newStatus;
@@ -223,11 +236,11 @@ export class OrderService {
       await queryRunner.release();
     }
 
-    return this.findOne(id);
+    return this.findOne(id, userContext);
   }
 
-  async remove(id: string, userId: string): Promise<{ id: string; deleted: true }> {
-    const order = await this.findOne(id);
+  async remove(id: string, userId: string, userContext?: UserContext): Promise<{ id: string; deleted: true }> {
+    const order = await this.findOne(id, userContext);
 
     if (order.status === OrderStatus.Delivered) {
       throw new BadRequestException('No se puede eliminar un pedido entregado');
