@@ -7,14 +7,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, MoreThan } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import * as ipaddr from 'ipaddr.js';
 import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
-import { Employee } from '../employee/entities/employee.entity';
+import { EmployeePinService } from '../../common/services/employee-pin.service';
 import { RegisterAdminDto } from './dto/register-admin.dto';
 import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
@@ -32,8 +31,7 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
-    @InjectRepository(Employee)
-    private readonly employeeRepository: Repository<Employee>,
+    private readonly employeePinService: EmployeePinService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -44,10 +42,27 @@ export class AuthService {
     );
   }
 
+  private getRefreshTokenExpiryString(): string {
+    return this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '10h';
+  }
+
   private getRefreshTokenExpiry(): Date {
-    const days =
-      this.configService.get<number>('JWT_REFRESH_DAYS') ?? 7;
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return new Date(Date.now() + this.parseExpiresInMs(this.getRefreshTokenExpiryString()));
+  }
+
+  private parseExpiresInMs(value: string): number {
+    const match = /^(\d+)(s|m|h|d)$/.exec(value.trim());
+    if (!match) {
+      return 10 * 60 * 60 * 1000;
+    }
+    const amount = parseInt(match[1], 10);
+    const multipliers: Record<string, number> = {
+      s: 1000,
+      m: 60 * 1000,
+      h: 60 * 60 * 1000,
+      d: 24 * 60 * 60 * 1000,
+    };
+    return amount * multipliers[match[2]];
   }
 
   async register(dto: RegisterAdminDto): Promise<{
@@ -140,93 +155,15 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  private validateIpAccess(clientIp: string): void {
-    const allowedIps = this.configService.get<string>('ALLOWED_IPS', '');
-    if (!allowedIps || allowedIps.trim() === '') {
-      return;
-    }
-
-    const addr = ipaddr.parse(clientIp);
-    const ranges = allowedIps.split(',').map((r) => r.trim()).filter(Boolean);
-
-    const isAllowed = ranges.some((cidr) => {
-      try {
-        const range = ipaddr.parseCIDR(cidr);
-        return addr.match(range);
-      } catch {
-        return false;
-      }
-    });
-
-    if (!isAllowed) {
-      throw new ForbiddenException(
-        'Acceso permitido solo desde la red WiFi de la empresa',
-      );
-    }
-  }
-
-  private readonly MAX_FAILED_ATTEMPTS = 5;
-  private readonly LOCKOUT_DURATION_MINUTES = 15;
-
   async loginPin(dto: LoginPinDto, clientIp?: string): Promise<{
     access_token: string;
     employee_id: string;
     employee_name: string;
     branch_name: string;
   }> {
-    if (clientIp) {
-      this.validateIpAccess(clientIp);
-    }
-
-    const now = new Date();
-
-    const employees = await this.employeeRepository.find({
-      where: { active: true, deleted_at: IsNull() },
-      relations: ['branch'],
-    });
-
-    let matchedEmployee: Employee | null = null;
-    const failedIds: string[] = [];
-
-    for (const emp of employees) {
-      if (emp.locked_until && emp.locked_until > now) {
-        continue;
-      }
-      const isMatch = await bcrypt.compare(dto.pin, emp.access_pin);
-      if (isMatch) {
-        matchedEmployee = emp;
-        break;
-      }
-      failedIds.push(emp.id);
-    }
-
-    if (!matchedEmployee) {
-      const MAX_ATTEMPTS = this.MAX_FAILED_ATTEMPTS;
-      const LOCK_MINUTES = this.LOCKOUT_DURATION_MINUTES;
-
-      for (const empId of failedIds) {
-        await this.employeeRepository.increment(
-          { id: empId },
-          'failed_attempts',
-          1,
-        );
-        const emp = employees.find((e) => e.id === empId);
-        if (emp && emp.failed_attempts + 1 >= MAX_ATTEMPTS) {
-          await this.employeeRepository.update(
-            { id: empId },
-            {
-              locked_until: new Date(now.getTime() + LOCK_MINUTES * 60 * 1000),
-            },
-          );
-        }
-      }
-
-      throw new UnauthorizedException('PIN inválido o empleado inactivo');
-    }
-
-    await this.employeeRepository.update(
-      { id: matchedEmployee.id },
-      { failed_attempts: 0, locked_until: null },
+    const matchedEmployee = await this.employeePinService.loginWithPin(
+      dto.pin,
+      clientIp,
     );
 
     const payload: JwtPayload = {
@@ -375,8 +312,7 @@ export class AuthService {
     const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
     const refresh_token = this.jwtService.sign(refreshPayload, {
       secret: refreshSecret,
-      expiresIn:
-        (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as any,
+      expiresIn: this.getRefreshTokenExpiryString() as any,
     });
 
     const hashedRefreshToken = await bcrypt.hash(refresh_token, 12);

@@ -82,7 +82,7 @@ describe('AuthService', () => {
       get: jest.fn((key: string) => {
         const config: Record<string, any> = {
           JWT_EXPIRES_IN: '15m',
-          JWT_REFRESH_DAYS: 7,
+          JWT_REFRESH_EXPIRES_IN: '10h',
           JWT_SECRET: 'test-secret',
           SYSTEM_AUDIT_USER_ID: '00000000-0000-4000-8000-000000000001',
         };

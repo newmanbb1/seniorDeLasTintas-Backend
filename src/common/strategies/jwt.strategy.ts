@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { User } from '../../modules/auth/entities/user.entity';
+import { Employee } from '../../modules/employee/entities/employee.entity';
 
 export interface JwtPayload {
   sub: string;
@@ -22,6 +23,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     configService: ConfigService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -38,6 +41,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
   async validate(payload: JwtPayload): Promise<JwtPayload> {
     if (payload.type === 'employee') {
+      const employee = await this.employeeRepository.findOne({
+        where: {
+          id: payload.employee_id ?? payload.id,
+          active: true,
+          deleted_at: IsNull(),
+        },
+        select: ['id'],
+      });
+      if (!employee) {
+        throw new UnauthorizedException('Token inválido o empleado no activo');
+      }
       return payload;
     }
     const user = await this.userRepository.findOne({

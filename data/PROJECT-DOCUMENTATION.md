@@ -86,8 +86,12 @@ src/
 │   ├── entities/
 │   │   └── BaseEntity.ts            → Entidad base con auditoría
 │   ├── decorators/                  → Decoradores (@Roles, @GetUser)
-│   ├── guards/                     → Guards (JWT, Roles, AllowAnonymous)
+│   ├── guards/                     → Guards (JWT, Roles, AllowAnonymous, WebhookAuth)
 │   ├── strategies/                  → Estrategias JWT
+│   ├── services/
+│   │   └── employee-pin.service.ts  → Validación PIN + lockout + IP (compartido)
+│   ├── employee-pin/
+│   │   └── employee-pin.module.ts   → Módulo exportable de EmployeePinService
 │   ├── dto/
 │   │   └── PaginationDto.ts         → DTO de paginación
 │   ├── response/                    → Respuestas estandarizadas
@@ -127,7 +131,7 @@ src/
 2. Backend:
    - Busca usuario por email
    - Valida password con bcrypt
-   - Genera access_token (15 min) + refresh_token (7 días)
+   - Genera access_token (15 min) + refresh_token (10 horas)
    - Guarda refresh_token en BD (hashed)
 
 3. Respuesta exitosa:
@@ -206,7 +210,7 @@ src/
 }
 ```
 
-**Refresh Token (7 días) — payload firmado:**
+**Refresh Token (10 horas) — payload firmado:**
 ```json
 {
   "sub": "uuid-del-usuario",
@@ -563,26 +567,42 @@ El backend implementa las siguientes medidas de seguridad para proteger la aplic
 
 | Nivel | Límite | Ventana | Endpoints |
 |-------|--------|---------|-----------|
-| `short` | 10 req | 1 segundo | Global (todos) |
-| `medium` | 50 req | 10 segundos | Global (todos) |
-| `long` | 100 req | 1 minuto | Global (todos) |
+| `short` | 100 req | 1 segundo | Global (todos) |
+| `medium` | 500 req | 10 segundos | Global (todos) |
+| `long` | 2000 req | 1 minuto | Global (todos) |
+| `login` | 10 req | 1 minuto | `POST /auth/login` |
 | `login-pin` | 5 req | 1 minuto | `POST /auth/login-pin` |
+| `register` | 3 req | 1 minuto | `POST /auth/register` |
 | `check-in/out` | 10 req | 1 minuto | `POST /attendance/check-in`, `POST /attendance/check-out` |
+| `seed/init` | 3 req | 1 hora | `POST /seed/init` |
 
 Si superas el límite, recibirás error `429 Too Many Requests`.
+
+### Bloqueo por intentos fallidos de PIN (lockout)
+
+Los endpoints que validan PIN de empleado comparten la lógica centralizada en `EmployeePinService`:
+
+| Comportamiento | Detalle |
+|----------------|---------|
+| Intentos máximos | 5 fallos consecutivos |
+| Duración del bloqueo | 15 minutos (`locked_until` en tabla `employee`) |
+| Endpoints protegidos | `POST /auth/login-pin`, `POST /attendance/check-in`, `POST /attendance/check-out` |
+| Restricción IP | Si `ALLOWED_IPS` está configurado, aplica a los tres endpoints |
+| Reset | Tras PIN correcto, `failed_attempts` vuelve a 0 y `locked_until` a `null` |
 
 ### PINs hasheados con bcrypt
 
 Los PINs de empleados **nunca se almacenan en texto plano**:
 
 ```
-Creación:  bcrypt.hash(pin, 10) → guardar hash en BD
+Creación:  bcrypt.hash(pin, 12) → guardar hash en BD
 Verificación: bcrypt.compare(pin, hash) → true/false
 ```
 
 - En `employee.service.ts`: se hashea el PIN al crear o actualizar empleado
-- En `attendance.service.ts`: se usa `bcrypt.compare()` en check-in y check-out
-- En `auth.service.ts`: se usa `bcrypt.compare()` en login-pin (recorre empleados activos)
+- En `EmployeePinService`: validación centralizada con lockout e IP
+- En `auth.service.ts`: delega en `EmployeePinService.loginWithPin()`
+- En `attendance.service.ts`: delega en `EmployeePinService.verifyPinForEmployee()`
 - En `seed.service.ts`: los PINs del seed también se hashean antes de guardar
 
 ### Sin fallbacks hardcodeados de secrets
@@ -638,7 +658,31 @@ CORS_ORIGIN=http://localhost:3001,http://localhost:5173
 
 ### Swagger en Producción
 
-La documentación Swagger (`/docs`) solo está disponible en entorno de desarrollo (`NODE_ENV !== 'production'`).
+La documentación Swagger (`/docs`) **solo se expone si** `SWAGGER_ENABLED=true` en `.env`. En producción debe estar en `false`:
+
+```env
+NODE_ENV=production
+SWAGGER_ENABLED=false
+```
+
+### Revocación de tokens de empleado
+
+Los JWT de empleado (`type: 'employee'`) se validan contra la base de datos en cada petición protegida. Si el empleado fue desactivado o eliminado (soft delete), el token deja de ser válido de inmediato.
+
+### SSE del chatbot (solo admin)
+
+El stream `GET /api/chatbot/events` exige token JWT con `role === 'admin'`. Secretarias y empleados no pueden suscribirse. El token puede enviarse por header `Authorization: Bearer` o por query `?token=` (necesario para `EventSource`, que no soporta headers personalizados).
+
+### Rotación de secretos
+
+Generar valores aleatorios con:
+
+```bash
+openssl rand -hex 64   # JWT_SECRET, JWT_REFRESH_SECRET
+openssl rand -hex 32   # WEBHOOK_SECRET, DB_PASSWORD, EVOLUTION_API_KEY
+```
+
+**Importante:** rotar `DEEPSEEK_API_KEY` en https://platform.deepseek.com si la clave anterior quedó expuesta. Actualizar también `WEBHOOK_SECRET` en Evolution API al rotarlo.
 
 ### Patrón de Soft Delete
 
@@ -2023,18 +2067,15 @@ WEBHOOK_SECRET=webhook-shared-secret (debe coincidir con el configurado en Evolu
 # Auditoría
 SYSTEM_AUDIT_USER_ID=00000000-0000-4000-8000-000000000001
 
-# JWT Auth
-JWT_SECRET=super-secret-key-jwt-senior-de-las-tintas-2024
+# JWT Auth (generar con: openssl rand -hex 64)
+JWT_SECRET=change-this-to-a-secure-random-string
+JWT_REFRESH_SECRET=change-this-to-another-different-random-string
 JWT_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
-JWT_REFRESH_DAYS=7
-
-# CORS
-CORS_ORIGIN=http://localhost:3001
+JWT_REFRESH_EXPIRES_IN=10h
 
 # NestJS
 NODE_ENV=development
-PORT=3000
+SWAGGER_ENABLED=true
 ```
 
 ### Comandos Docker
@@ -2317,13 +2358,21 @@ npm run migration:generate -- src/migrations/modificar-relacion-inventory
 - [x] WebhookAuthGuard con `x-webhook-secret` en endpoints webhook 🔒
 - [x] Rate limiting específico: login-pin (5/min), check-in/out (10/min) 🔒
 - [x] Mapeo explícito de campos en services (sin `Object.assign`) 🔒
+- [x] Lockout de PIN unificado (`EmployeePinService`) en login-pin y check-in/out 🔒
+- [x] Restricción IP (`ALLOWED_IPS`) aplicada también a check-in/check-out 🔒
+- [x] Revocación inmediata de tokens JWT de empleados inactivos 🔒
+- [x] SSE chatbot restringido a rol `admin` únicamente 🔒
+- [x] Swagger controlado por `SWAGGER_ENABLED` (off en producción) 🔒
+- [x] Secretos rotados y generados con `openssl rand` 🔒
+- [x] Dependencias auditadas: `multer@^2.2.0` (override npm), `qs` parcheado 🔒
+- [x] `output.json` excluido de git (`.gitignore`) 🔒
 
 ---
 
 ## 📞 Contacto y Soporte
 
 Para dudas técnicas sobre la API:
-- Consultar Swagger: `http://localhost:3000/docs`
+- Consultar Swagger (solo si `SWAGGER_ENABLED=true`): `http://localhost:3000/docs`
 - Revisar logs: `docker compose logs -f backend`
 
 ---

@@ -10,10 +10,12 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { JwtStrategy } from '../../common/strategies/jwt.strategy';
 import { JwtRefreshStrategy } from '../../common/strategies/jwt-refresh.strategy';
+import { EmployeePinModule } from '../../common/employee-pin/employee-pin.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, RefreshToken, Employee]),
+    EmployeePinModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -27,7 +29,7 @@ import { JwtRefreshStrategy } from '../../common/strategies/jwt-refresh.strategy
           return secret;
         })(),
         signOptions: {
-          expiresIn: '15m',
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
         },
       }),
     }),

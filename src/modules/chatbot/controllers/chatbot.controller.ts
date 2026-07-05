@@ -61,7 +61,7 @@ export class ChatbotController {
     }
     try {
       const payload = this.jwtService.verify(token);
-      if (!payload || (payload.role !== 'admin' && payload.type !== 'access')) {
+      if (!payload || payload.role !== UserRole.ADMIN) {
         throw new Error();
       }
     } catch {
