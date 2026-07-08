@@ -10,10 +10,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import * as ipaddr from 'ipaddr.js';
+import * as crypto from 'crypto';
 import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
-import { Employee } from '../employee/entities/employee.entity';
+import { EmployeePinService } from '../../common/services/employee-pin.service';
 import { RegisterAdminDto } from './dto/register-admin.dto';
 import { RegisterSecretariaDto } from './dto/register-secretaria.dto';
 import { LoginAdminDto } from './dto/login-admin.dto';
@@ -31,8 +31,7 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
-    @InjectRepository(Employee)
-    private readonly employeeRepository: Repository<Employee>,
+    private readonly employeePinService: EmployeePinService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -43,10 +42,27 @@ export class AuthService {
     );
   }
 
+  private getRefreshTokenExpiryString(): string {
+    return this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '10h';
+  }
+
   private getRefreshTokenExpiry(): Date {
-    const days =
-      this.configService.get<number>('JWT_REFRESH_DAYS') ?? 7;
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return new Date(Date.now() + this.parseExpiresInMs(this.getRefreshTokenExpiryString()));
+  }
+
+  private parseExpiresInMs(value: string): number {
+    const match = /^(\d+)(s|m|h|d)$/.exec(value.trim());
+    if (!match) {
+      return 10 * 60 * 60 * 1000;
+    }
+    const amount = parseInt(match[1], 10);
+    const multipliers: Record<string, number> = {
+      s: 1000,
+      m: 60 * 1000,
+      h: 60 * 60 * 1000,
+      d: 24 * 60 * 60 * 1000,
+    };
+    return amount * multipliers[match[2]];
   }
 
   async register(dto: RegisterAdminDto): Promise<{
@@ -54,6 +70,13 @@ export class AuthService {
     refresh_token: string;
     user: Partial<User>;
   }> {
+    const existingAdmin = await this.userRepository.findOne({
+      where: { role: UserRole.ADMIN, deleted_at: IsNull() },
+    });
+    if (existingAdmin) {
+      throw new ForbiddenException('Ya existe un administrador. No se permite otro registro.');
+    }
+
     const existingUser = await this.userRepository.findOne({
       where: { email: dto.email, deleted_at: IsNull() },
     });
@@ -61,7 +84,7 @@ export class AuthService {
       throw new BadRequestException('El email ya está registrado');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     const user = this.userRepository.create({
       email: dto.email,
@@ -88,10 +111,10 @@ export class AuthService {
       where: { email: dto.email, deleted_at: IsNull() },
     });
     if (existingUser) {
-      throw new BadRequestException('El email ya está registrado');
+      throw new BadRequestException('Solicitud inválida');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
 
     const user = this.userRepository.create({
       email: dto.email,
@@ -121,7 +144,7 @@ export class AuthService {
     }
 
     if (!user.active) {
-      throw new ForbiddenException('Usuario inactivo');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
@@ -132,76 +155,35 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  private validateIpAccess(clientIp: string): void {
-    const allowedIps = this.configService.get<string>('ALLOWED_IPS', '');
-    if (!allowedIps || allowedIps.trim() === '') {
-      return;
-    }
-
-    const addr = ipaddr.parse(clientIp);
-    const ranges = allowedIps.split(',').map((r) => r.trim()).filter(Boolean);
-
-    const isAllowed = ranges.some((cidr) => {
-      try {
-        const range = ipaddr.parseCIDR(cidr);
-        return addr.match(range);
-      } catch {
-        return false;
-      }
-    });
-
-    if (!isAllowed) {
-      throw new ForbiddenException(
-        'Acceso permitido solo desde la red WiFi de la empresa',
-      );
-    }
-  }
-
   async loginPin(dto: LoginPinDto, clientIp?: string): Promise<{
     access_token: string;
     employee_id: string;
     employee_name: string;
     branch_name: string;
   }> {
-    if (clientIp) {
-      this.validateIpAccess(clientIp);
-    }
-
-    const employees = await this.employeeRepository.find({
-      where: { active: true, deleted_at: IsNull() },
-      relations: ['branch'],
-    });
-
-    let matchedEmployee: Employee | null = null;
-    for (const emp of employees) {
-      const isMatch = await bcrypt.compare(dto.pin, emp.access_pin);
-      if (isMatch) {
-        matchedEmployee = emp;
-        break;
-      }
-    }
-
-    const employee = matchedEmployee;
-    if (!employee) {
-      throw new UnauthorizedException('PIN inválido o empleado inactivo');
-    }
+    const matchedEmployee = await this.employeePinService.loginWithPin(
+      dto.pin,
+      clientIp,
+    );
 
     const payload: JwtPayload = {
-      sub: employee.id,
-      id: employee.id,
-      email: `employee-${employee.id}`,
+      sub: matchedEmployee.id,
+      id: matchedEmployee.id,
+      email: `employee-${matchedEmployee.id}`,
       role: 'employee',
       type: 'employee',
-      employee_id: employee.id,
+      employee_id: matchedEmployee.id,
     };
 
-    const access_token = this.jwtService.sign(payload);
+    const access_token = this.jwtService.sign(payload, {
+      expiresIn: '8h',
+    });
 
     return {
       access_token,
-      employee_id: employee.id,
-      employee_name: employee.full_name,
-      branch_name: employee.branch?.name || 'Sin sucursal',
+      employee_id: matchedEmployee.id,
+      employee_name: matchedEmployee.full_name,
+      branch_name: matchedEmployee.branch?.name || 'Sin sucursal',
     };
   }
 
@@ -209,15 +191,12 @@ export class AuthService {
     refreshToken: string,
   ): Promise<{ access_token: string; refresh_token: string }> {
     try {
+      const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+      if (!refreshSecret) {
+        throw new Error('JWT_REFRESH_SECRET no configurado en variables de entorno');
+      }
       const payload = this.jwtService.verify<JwtRefreshPayload>(refreshToken, {
-        secret:
-          (() => {
-          const secret = this.configService.get<string>('JWT_SECRET');
-          if (!secret) {
-            throw new Error('JWT_SECRET no configurado en variables de entorno');
-          }
-          return secret;
-        })(),
+        secret: refreshSecret,
       });
 
       if (payload.type !== 'refresh' || !payload.jti) {
@@ -231,6 +210,15 @@ export class AuthService {
 
       if (!storedToken) {
         throw new UnauthorizedException('Refresh token expirado o revocado');
+      }
+
+      const isTokenValid = await bcrypt.compare(refreshToken, storedToken.token);
+      if (!isTokenValid) {
+        await this.refreshTokenRepository.update(
+          { user_id: payload.sub, revoked: false },
+          { revoked: true },
+        );
+        throw new UnauthorizedException('Refresh token inválido');
       }
 
       if (storedToken.expires_at < new Date()) {
@@ -271,8 +259,7 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-    const { password, ...result } = user;
-    return result;
+    return user;
   }
 
   async updateUser(
@@ -284,15 +271,14 @@ export class AuthService {
       where: { id, deleted_at: IsNull() },
     });
     if (!user) {
-      throw new NotFoundException(`Usuario con ID "${id}" no encontrado`);
+      throw new NotFoundException('Usuario no encontrado');
     }
 
     if (dto.active !== undefined) user.active = dto.active;
     user.updated_by = userId;
 
     await this.userRepository.save(user);
-    const { password, ...result } = user;
-    return result;
+    return user;
   }
 
   private async generateTokens(user: User): Promise<{
@@ -315,7 +301,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       type: 'refresh',
-      jti: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      jti: crypto.randomUUID(),
       branch_id: user.branch_id || undefined,
     };
 
@@ -323,12 +309,13 @@ export class AuthService {
       expiresIn: this.getAccessTokenExpiry() as any,
     });
 
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
     const refresh_token = this.jwtService.sign(refreshPayload, {
-      expiresIn:
-        (this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d') as any,
+      secret: refreshSecret,
+      expiresIn: this.getRefreshTokenExpiryString() as any,
     });
 
-    const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
+    const hashedRefreshToken = await bcrypt.hash(refresh_token, 12);
     const expiresAt = this.getRefreshTokenExpiry();
 
     const refreshTokenEntity = this.refreshTokenRepository.create({
@@ -341,11 +328,10 @@ export class AuthService {
     });
     await this.refreshTokenRepository.save(refreshTokenEntity);
 
-    const { password, ...userWithoutPassword } = user;
     return {
       access_token,
       refresh_token,
-      user: userWithoutPassword,
+      user,
     };
   }
 

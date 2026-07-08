@@ -29,14 +29,18 @@ async function bootstrap() {
     }),
   );
 
+  app.disable('x-powered-by');
+
   app.enableCors({
     origin: process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',')
-      : [
-          'http://localhost:3001',
-          'http://localhost:5173',
-          'http://localhost',
-        ],
+      : process.env.NODE_ENV === 'production'
+        ? (() => { throw new Error('CORS_ORIGIN must be set in production'); })()
+        : [
+            'http://localhost:3001',
+            'http://localhost:5173',
+            'http://localhost',
+          ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true,
@@ -58,9 +62,13 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
-  const isProduction = process.env.NODE_ENV === 'production';
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_IPS) {
+    console.warn('WARNING: ALLOWED_IPS is empty — no IP restrictions on employee login');
+  }
 
-  if (!isProduction) {
+  const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true';
+
+  if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Senior de las Tintas API')
       .setDescription('REST API documentation')

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
@@ -17,7 +18,16 @@ export class WebhookAuthGuard implements CanActivate {
     if (!headerSecret) {
       throw new UnauthorizedException('Falta encabezado x-webhook-secret');
     }
-    if (headerSecret !== expectedSecret) {
+
+    const headerBuf = Buffer.from(headerSecret);
+    const expectedBuf = Buffer.from(expectedSecret);
+    const maxLen = Math.max(headerBuf.length, expectedBuf.length);
+    const hPad = Buffer.alloc(maxLen);
+    const ePad = Buffer.alloc(maxLen);
+    headerBuf.copy(hPad);
+    expectedBuf.copy(ePad);
+
+    if (!timingSafeEqual(hPad, ePad)) {
       throw new UnauthorizedException('x-webhook-secret inválido');
     }
     return true;

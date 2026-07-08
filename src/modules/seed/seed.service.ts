@@ -60,6 +60,16 @@ export class SeedService {
   //   return userCount > 0;
   // }
 
+  async init(): Promise<{ message: string; data: any }> {
+    const existingAdmin = await this.userRepository.findOne({
+      where: { role: UserRole.ADMIN, deleted_at: IsNull() },
+    });
+    if (existingAdmin) {
+      throw new Error('Ya existe un administrador. Usa POST /seed/reset autenticado.');
+    }
+    return this.seedAll();
+  }
+
   async seedAll(): Promise<{ message: string; data: any }> {
     const result: any = {
       admin: false,
@@ -151,14 +161,25 @@ export class SeedService {
   }
 
   private async clearAllData(): Promise<void> {
-    await this.attendanceRepository.delete({});
-    await this.stockTransferRepository.delete({});
-    await this.inventoryRepository.delete({});
-    await this.employeeRepository.delete({});
-    await this.supplyRepository.delete({});
-    await this.refreshTokenRepository.delete({});
-    await this.userRepository.delete({});
-    await this.branchRepository.delete({});
+    const queryRunner = this.attendanceRepository.manager.connection.createQueryRunner();
+    try {
+      await queryRunner.query('SET session_replication_role = replica');
+      for (const repo of [
+        this.attendanceRepository,
+        this.stockTransferRepository,
+        this.inventoryRepository,
+        this.employeeRepository,
+        this.supplyRepository,
+        this.refreshTokenRepository,
+        this.userRepository,
+        this.branchRepository,
+      ]) {
+        await repo.query(`DELETE FROM "${repo.metadata.tableName}"`);
+      }
+    } finally {
+      await queryRunner.query('SET session_replication_role = origin');
+      await queryRunner.release();
+    }
   }
 
   private async seedAdmin(): Promise<string | null> {
@@ -170,7 +191,7 @@ export class SeedService {
       return existing.id;
     }
 
-    const hashedPassword = await bcrypt.hash(seedAdmin.password, 10);
+    const hashedPassword = await bcrypt.hash(seedAdmin.password, 12);
     const admin = this.userRepository.create({
       email: seedAdmin.email,
       password: hashedPassword,
@@ -202,7 +223,7 @@ export class SeedService {
         continue;
       }
 
-      const hashedPassword = await bcrypt.hash(secretariaData.password, 10);
+      const hashedPassword = await bcrypt.hash(secretariaData.password, 12);
 
       const branch = branches[i] || branches[0];
 
@@ -292,7 +313,7 @@ export class SeedService {
         continue;
       }
 
-      const hashedPin = await bcrypt.hash(empData.access_pin, 10);
+      const hashedPin = await bcrypt.hash(empData.access_pin, 12);
       const employee = this.employeeRepository.create({
         ...empData,
         access_pin: hashedPin,

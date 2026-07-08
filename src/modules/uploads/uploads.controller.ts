@@ -224,8 +224,8 @@ export class UploadsController {
   }
 
   private sanitizeFilename(filename: string): string {
-    const base = filename.replace(/\.\./g, '').replace(/[\/\\]/g, '');
-    return base || '_';
+    const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, '');
+    return sanitized || '_';
   }
 
   private getMimeType(filename: string): string {

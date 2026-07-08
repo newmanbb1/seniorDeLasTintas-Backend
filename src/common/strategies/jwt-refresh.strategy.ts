@@ -25,9 +25,9 @@ export class JwtRefreshStrategy extends PassportStrategy(
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: (() => {
-        const secret = configService.get<string>('JWT_SECRET');
+        const secret = configService.get<string>('JWT_REFRESH_SECRET');
         if (!secret) {
-          throw new Error('JWT_SECRET no configurado en variables de entorno');
+          throw new Error('JWT_REFRESH_SECRET no configurado en variables de entorno');
         }
         return secret;
       })(),

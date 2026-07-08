@@ -6,6 +6,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsNumber,
   Min,
   Max,
   MaxLength,
@@ -70,4 +71,26 @@ export class CreateSupplyDto {
   @Min(0)
   @Max(999999)
   umbral_min?: number;
+
+  @ApiProperty({ example: 25.50, description: 'Precio de venta unitario' })
+  @IsNumber()
+  @Min(0)
+  sale_price: number;
+
+  @ApiProperty({ example: 'HP', maxLength: 255 })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  brand: string;
+
+  @ApiProperty({ example: 'HP Deskjet 2135, 1115', required: false })
+  @IsOptional()
+  @IsString()
+  compatibility?: string;
+
+  @ApiProperty({ example: 'Tinta original de alta duración', required: false, description: 'Descripción comercial para la vitrina' })
+  @IsOptional()
+  @IsString()
+  commercial_description?: string;
 }

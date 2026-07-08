@@ -50,11 +50,12 @@ export class SupplyService {
 
     const where: any = { deleted_at: IsNull() };
 
+    const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
     if (name) {
-      where.name = Like(`%${name}%`);
+      where.name = Like(`%${sanitizeLike(name)}%`);
     }
     if (category) {
-      where.category = Like(`%${category}%`);
+      where.category = Like(`%${sanitizeLike(category)}%`);
     }
 
     const [data, total] = await this.supplyRepository.findAndCount({
@@ -72,7 +73,7 @@ export class SupplyService {
       where: { id, deleted_at: IsNull() },
     });
     if (!supply) {
-      throw new NotFoundException(`Insumo con ID "${id}" no encontrado`);
+      throw new NotFoundException('Insumo no encontrado');
     }
     return supply;
   }
@@ -103,6 +104,10 @@ export class SupplyService {
     if (dto.umbral_min !== undefined) supply.umbral_min = dto.umbral_min;
     if (dto.images !== undefined) supply.images = dto.images;
     if (dto.videos !== undefined) supply.videos = dto.videos;
+    if (dto.sale_price !== undefined) supply.sale_price = dto.sale_price;
+    if (dto.brand !== undefined) supply.brand = dto.brand;
+    if (dto.compatibility !== undefined) supply.compatibility = dto.compatibility;
+    if (dto.commercial_description !== undefined) supply.commercial_description = dto.commercial_description;
     supply.updated_by = userId;
     return this.supplyRepository.save(supply);
   }

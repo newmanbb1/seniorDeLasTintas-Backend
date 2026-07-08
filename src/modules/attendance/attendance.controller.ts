@@ -9,7 +9,9 @@ import {
   Post,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
@@ -31,6 +33,7 @@ import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { FilterAttendance } from './dto/filter-attendance.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { EmployeeAuthGuard } from '../../common/guards/employee-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';
 import { UserRole } from '../auth/entities/user.entity';
@@ -58,8 +61,13 @@ export class AttendanceController {
   @ApiOperation({ summary: 'Registrar hora de entrada del empleado (PIN)' })
   @ApiBody({ type: CreateAttendanceDto })
   @ApiCreatedWrapped()
-  async checkIn(@Body() createAttendanceDto: CreateAttendanceDto) {
-    return ok(await this.attendanceService.checkIn(createAttendanceDto));
+  async checkIn(
+    @Body() createAttendanceDto: CreateAttendanceDto,
+    @Req() req: Request,
+  ) {
+    return ok(
+      await this.attendanceService.checkIn(createAttendanceDto, req.ip),
+    );
   }
 
   @Post('check-out')
@@ -68,8 +76,40 @@ export class AttendanceController {
   @ApiOperation({ summary: 'Registrar hora de salida del empleado (PIN)' })
   @ApiBody({ type: CheckOutDto })
   @ApiOkWrapped()
-  async checkOut(@Body() checkOutDto: CheckOutDto) {
-    return ok(await this.attendanceService.checkOut(checkOutDto));
+  async checkOut(@Body() checkOutDto: CheckOutDto, @Req() req: Request) {
+    return ok(await this.attendanceService.checkOut(checkOutDto, req.ip));
+  }
+
+  @Get('me/today')
+  @UseGuards(JwtAuthGuard, EmployeeAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Estado de asistencia del empleado autenticado (hoy)' })
+  @ApiOkWrapped()
+  async getMyTodayStatus(@GetUser() user: any) {
+    const employeeId = user.employee_id ?? user.id;
+    return ok(await this.attendanceService.getTodayStatus(employeeId));
+  }
+
+  @Post('me/check-in')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard, EmployeeAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Registrar entrada del empleado autenticado' })
+  @ApiCreatedWrapped()
+  async checkInSelf(@GetUser() user: any, @Req() req: Request) {
+    const employeeId = user.employee_id ?? user.id;
+    return ok(await this.attendanceService.checkInSelf(employeeId, req.ip));
+  }
+
+  @Post('me/check-out')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard, EmployeeAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Registrar salida del empleado autenticado' })
+  @ApiOkWrapped()
+  async checkOutSelf(@GetUser() user: any, @Req() req: Request) {
+    const employeeId = user.employee_id ?? user.id;
+    return ok(await this.attendanceService.checkOutSelf(employeeId, req.ip));
   }
 
   @Get()

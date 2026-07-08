@@ -7,6 +7,8 @@ if (!process.env.DB_HOST || !process.env.DB_USERNAME || !process.env.DB_PASSWORD
   throw new Error('Faltan variables de entorno de la base de datos (DB_HOST, DB_USERNAME, DB_PASSWORD, DB_NAME)');
 }
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const AppDataSource = new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST,
@@ -16,10 +18,14 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME,
   synchronize: false,
   migrationsRun: false,
-  entities: ['src/modules/**/*.entity.ts'],
-  migrations: ['src/migrations/*.ts'],
+  entities: isProduction
+    ? ['dist/modules/**/*.entity.js']
+    : ['src/modules/**/*.entity.ts'],
+  migrations: isProduction
+    ? ['dist/migrations/*.js']
+    : ['src/migrations/*.ts'],
   migrationsTableName: 'migrations',
-  logging: process.env.NODE_ENV !== 'production',
+  logging: !isProduction,
 });
 
 AppDataSource.initialize()

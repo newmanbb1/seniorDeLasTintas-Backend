@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -8,7 +7,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThanOrEqual, LessThanOrEqual, Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt';
 import {
   Attendance,
   AttendanceEntryStatus,
@@ -20,6 +18,7 @@ import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 import { FilterAttendance } from './dto/filter-attendance.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 import { UserRole } from '../auth/entities/user.entity';
+import { EmployeePinService } from '../../common/services/employee-pin.service';
 
 export interface UserContext {
   userId: string;
@@ -37,6 +36,7 @@ export class AttendanceService {
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
     private readonly configService: ConfigService,
+    private readonly employeePinService: EmployeePinService,
   ) {}
 
   private getSystemUserId(): string {
@@ -76,28 +76,14 @@ export class AttendanceService {
     return role === UserRole.SECRETARIA;
   }
 
-  async checkIn(dto: CreateAttendanceDto): Promise<Attendance> {
+  async checkIn(dto: CreateAttendanceDto, clientIp?: string): Promise<Attendance> {
     const { employee_id, pin } = dto;
 
-    const employee = await this.employeeRepository.findOne({
-      where: { id: employee_id, deleted_at: IsNull() },
-      relations: ['branch'],
-    });
-
-    if (!employee) {
-      throw new NotFoundException(
-        `Empleado con ID "${employee_id}" no encontrado`,
-      );
-    }
-
-    if (!employee.active) {
-      throw new ForbiddenException('El empleado está inactivo');
-    }
-
-    const isPinValid = await bcrypt.compare(pin, employee.access_pin);
-    if (!isPinValid) {
-      throw new BadRequestException('PIN incorrecto');
-    }
+    const employee = await this.employeePinService.verifyPinForEmployee(
+      employee_id,
+      pin,
+      clientIp,
+    );
 
     const today = this.getCurrentDate();
     const existingAttendance = await this.attendanceRepository.findOne({
@@ -129,27 +115,14 @@ export class AttendanceService {
     return this.attendanceRepository.save(attendance);
   }
 
-  async checkOut(dto: CheckOutDto): Promise<Attendance> {
+  async checkOut(dto: CheckOutDto, clientIp?: string): Promise<Attendance> {
     const { employee_id, pin } = dto;
 
-    const employee = await this.employeeRepository.findOne({
-      where: { id: employee_id, deleted_at: IsNull() },
-    });
-
-    if (!employee) {
-      throw new NotFoundException(
-        `Empleado con ID "${employee_id}" no encontrado`,
-      );
-    }
-
-    if (!employee.active) {
-      throw new ForbiddenException('El empleado está inactivo');
-    }
-
-    const isPinValid = await bcrypt.compare(pin, employee.access_pin);
-    if (!isPinValid) {
-      throw new BadRequestException('PIN incorrecto');
-    }
+    await this.employeePinService.verifyPinForEmployee(
+      employee_id,
+      pin,
+      clientIp,
+    );
 
     const today = this.getCurrentDate();
     const attendance = await this.attendanceRepository.findOne({
@@ -179,6 +152,120 @@ export class AttendanceService {
 
     attendance.check_out = checkOutTime;
     attendance.hours_worked = hoursWorked;
+    attendance.updated_by = this.getSystemUserId();
+
+    return this.attendanceRepository.save(attendance);
+  }
+
+  private async assertActiveEmployee(
+    employeeId: string,
+    clientIp?: string,
+  ): Promise<Employee> {
+    this.employeePinService.validateIpAccess(clientIp);
+
+    const employee = await this.employeeRepository.findOne({
+      where: { id: employeeId, active: true, deleted_at: IsNull() },
+      relations: ['branch'],
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Empleado no encontrado o inactivo');
+    }
+
+    return employee;
+  }
+
+  async getTodayStatus(employeeId: string): Promise<{
+    register_date: string;
+    has_check_in: boolean;
+    has_check_out: boolean;
+    check_in: Date | null;
+    check_out: Date | null;
+    check_in_status: AttendanceEntryStatus | null;
+    hours_worked: string | null;
+  }> {
+    const today = this.getCurrentDate();
+    const attendance = await this.attendanceRepository.findOne({
+      where: {
+        employee: { id: employeeId },
+        register_date: today,
+        deleted_at: IsNull(),
+      },
+    });
+
+    return {
+      register_date: today,
+      has_check_in: !!attendance,
+      has_check_out: !!attendance?.check_out,
+      check_in: attendance?.check_in ?? null,
+      check_out: attendance?.check_out ?? null,
+      check_in_status: attendance?.check_in_status ?? null,
+      hours_worked: attendance?.hours_worked ?? null,
+    };
+  }
+
+  async checkInSelf(employeeId: string, clientIp?: string): Promise<Attendance> {
+    const employee = await this.assertActiveEmployee(employeeId, clientIp);
+
+    const today = this.getCurrentDate();
+    const existingAttendance = await this.attendanceRepository.findOne({
+      where: {
+        employee: { id: employeeId },
+        register_date: today,
+      },
+    });
+
+    if (existingAttendance && !existingAttendance.deleted_at) {
+      throw new ConflictException(
+        `Ya existe un registro de entrada para hoy. Hora de ingreso: ${existingAttendance.check_in}`,
+      );
+    }
+
+    const checkInTime = this.getCurrentTimestamp();
+    const status = this.determineStatus(checkInTime);
+
+    const attendance = this.attendanceRepository.create({
+      employee,
+      register_date: today,
+      check_in: checkInTime,
+      check_in_status: status,
+      check_out: null,
+      hours_worked: '0',
+      created_by: this.getSystemUserId(),
+    });
+
+    return this.attendanceRepository.save(attendance);
+  }
+
+  async checkOutSelf(employeeId: string, clientIp?: string): Promise<Attendance> {
+    await this.assertActiveEmployee(employeeId, clientIp);
+
+    const today = this.getCurrentDate();
+    const attendance = await this.attendanceRepository.findOne({
+      where: {
+        employee: { id: employeeId },
+        register_date: today,
+      },
+    });
+
+    if (!attendance || attendance.deleted_at) {
+      throw new NotFoundException(
+        'No existe registro de entrada para hoy. Debe registrar entrada primero.',
+      );
+    }
+
+    if (attendance.check_out) {
+      throw new ConflictException(
+        `Ya has registrado tu salida hoy a las ${attendance.check_out}`,
+      );
+    }
+
+    const checkOutTime = this.getCurrentTimestamp();
+    attendance.check_out = checkOutTime;
+    attendance.hours_worked = this.calculateHoursWorked(
+      attendance.check_in,
+      checkOutTime,
+    );
     attendance.updated_by = this.getSystemUserId();
 
     return this.attendanceRepository.save(attendance);

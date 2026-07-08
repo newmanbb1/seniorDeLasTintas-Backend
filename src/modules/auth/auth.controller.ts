@@ -33,6 +33,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @AllowAnonymous()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -67,6 +68,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login de administrador (email + password)' })
@@ -95,6 +97,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Renovar access token con refresh token' })

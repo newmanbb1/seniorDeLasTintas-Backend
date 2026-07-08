@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { join } from 'path';
 import { BranchModule } from './modules/branch/branch.module';
 import { SupplyModule } from './modules/supply/supply.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -15,6 +13,8 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { CustomerModule } from './modules/customer/customer.module';
+import { OrderModule } from './modules/order/order.module';
 
 @Module({
   imports: [
@@ -27,24 +27,19 @@ import { UploadsModule } from './modules/uploads/uploads.module';
       {
         name: 'short',
         ttl: 1000,
-        limit: 10,
+        limit: 100,
       },
       {
         name: 'medium',
         ttl: 10000,
-        limit: 50,
+        limit: 500,
       },
       {
         name: 'long',
         ttl: 60000,
-        limit: 100,
+        limit: 2000,
       },
     ]),
-
-    ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'),
-      serveRoot: '/uploads',
-    }),
 
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -69,6 +64,8 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     StockTransferModule,
     EmployeeModule,
     ChatbotModule,
+    CustomerModule,
+    OrderModule,
   ],
   controllers: [],
   providers: [
