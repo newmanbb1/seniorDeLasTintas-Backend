@@ -480,4 +480,26 @@ export class ChatbotController {
     }
     return ok(result);
   }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Desconectar WhatsApp (logout) y generar nuevo QR (solo admin)',
+  })
+  @ApiOkWrapped()
+  async logout() {
+    const result = await this.evolutionApiService.logoutInstance();
+    if (result.success) {
+      this.conversationService.emit('connection_status', 'close');
+      if (result.qrcode) {
+        this.conversationService.emit('qrcode_updated', {
+          qrcode: result.qrcode,
+        });
+      }
+    }
+    return ok(result);
+  }
 }

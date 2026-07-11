@@ -39,7 +39,7 @@ export class EvolutionApiService implements OnModuleInit {
         'Content-Type': 'application/json',
         apikey: apiKey,
       },
-      timeout: 300000,
+      timeout: 30000,
     });
   }
 
@@ -131,7 +131,9 @@ export class EvolutionApiService implements OnModuleInit {
         `Instancia ${this.instanceName} solicitada, esperando QR...`,
       );
 
-      await this.delay(5000);
+      // Poll corto para cachear el QR apenas Evolution lo genere
+      await this.delay(1200);
+      await this.fetchQrCode();
       this.configureWebhook().catch((err) =>
         this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
       );
@@ -361,6 +363,38 @@ export class EvolutionApiService implements OnModuleInit {
     return null;
   }
 
+  /**
+   * Solicita el QR a Evolution reintentando en intervalos cortos hasta que
+   * esté disponible, en vez de esperar un tiempo fijo largo. Devuelve el
+   * base64 apenas se genera y lo cachea.
+   */
+  private async fetchQrCode(
+    maxAttempts = 8,
+    intervalMs = 800,
+  ): Promise<string | undefined> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const connectRes = await this.client.get<{
+          base64?: string;
+          code?: string;
+          pairingCode?: string;
+        }>(`/instance/connect/${this.instanceName}`);
+        const qr = (connectRes.data?.base64 || connectRes.data?.code) as
+          | string
+          | undefined;
+        if (qr) {
+          this.lastQrCode = qr;
+          this.lastQrTime = Date.now();
+          return qr;
+        }
+      } catch {
+        // Instancia todavía inicializando; reintentar
+      }
+      await this.delay(intervalMs);
+    }
+    return undefined;
+  }
+
   async reconnectInstance(): Promise<{
     success: boolean;
     message: string;
@@ -410,14 +444,7 @@ export class EvolutionApiService implements OnModuleInit {
 
         // Solo regenerar si no hay QR válido
         this.logger.log(`Generando nuevo QR para ${this.instanceName}...`);
-        const connectRes = await this.client.get<{ base64?: string; pairingCode?: string; code?: string }>(
-          `/instance/connect/${this.instanceName}`,
-        );
-        const qrcodeBase64 = (connectRes.data?.base64 || connectRes.data?.code) as string | undefined;
-        if (qrcodeBase64) {
-          this.lastQrCode = qrcodeBase64;
-          this.lastQrTime = Date.now();
-        }
+        const qrcodeBase64 = await this.fetchQrCode();
 
         this.configureWebhook().catch((err) =>
           this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
@@ -446,16 +473,9 @@ export class EvolutionApiService implements OnModuleInit {
       );
 
       this.evolutionAvailable = true;
-      await this.delay(5000);
+      await this.delay(1200);
 
-      const connectRes = await this.client.get<{ base64?: string; pairingCode?: string; code?: string }>(
-        `/instance/connect/${this.instanceName}`,
-      );
-      const qrcodeBase64 = (connectRes.data?.base64 || connectRes.data?.code) as string | undefined;
-      if (qrcodeBase64) {
-        this.lastQrCode = qrcodeBase64;
-        this.lastQrTime = Date.now();
-      }
+      const qrcodeBase64 = await this.fetchQrCode();
 
       this.configureWebhook().catch((err) =>
         this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
@@ -476,6 +496,68 @@ export class EvolutionApiService implements OnModuleInit {
         success: false,
         message:
           error.response?.data?.message || 'Error al reconectar instancia',
+      };
+    }
+  }
+
+  /**
+   * Cierra la sesión de WhatsApp (logout) sin borrar la instancia y genera
+   * un QR nuevo para volver a vincular. Maneja el bug conocido de Evolution
+   * que a veces responde 500 aunque la sesión sí se cerró.
+   */
+  async logoutInstance(): Promise<{
+    success: boolean;
+    message: string;
+    qrcode?: string;
+  }> {
+    try {
+      try {
+        await this.client.delete(`/instance/logout/${this.instanceName}`);
+        this.logger.log(`Instancia ${this.instanceName} desconectada`);
+      } catch (error: any) {
+        // Evolution puede devolver 500 aunque el logout haya funcionado.
+        // Verificar el estado: si ya no está 'open', tratarlo como éxito.
+        const state = await this.getInstanceStatus();
+        const currentState = state?.instance?.state;
+        if (currentState && currentState !== 'open') {
+          this.logger.warn(
+            `Logout respondió error pero la sesión ya está cerrada (${currentState})`,
+          );
+        } else {
+          throw error;
+        }
+      }
+
+      // Limpiar cache de QR previo
+      this.lastQrCode = null;
+      this.lastQrTime = 0;
+
+      // Esperar a que Evolution reinicie la instancia y generar QR nuevo
+      await this.delay(1500);
+      const qrcodeBase64 = await this.fetchQrCode();
+
+      this.configureWebhook().catch((err) =>
+        this.logger.warn(`Webhook config (non-blocking): ${err.message}`),
+      );
+
+      this.evolutionAvailable = true;
+      this.logger.log(
+        `Sesión cerrada. QR nuevo: ${qrcodeBase64 ? 'obtenido' : 'no disponible'}`,
+      );
+      return {
+        success: true,
+        message: qrcodeBase64 ? 'Escanea el QR.' : 'Esperando QR...',
+        qrcode: qrcodeBase64,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        'Error desconectando instancia:',
+        error.response?.data || error.message,
+      );
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Error al desconectar instancia',
       };
     }
   }
