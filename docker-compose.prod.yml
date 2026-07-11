@@ -1,0 +1,163 @@
+version: '3.8'
+
+services:
+  # Base de datos para Evolution API
+  postgres:
+    image: postgres:15-alpine
+    container_name: evolution_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal_db_network
+
+  # Redis para Evolution API
+  redis:
+    image: redis:7-alpine
+    container_name: app_redis_prod
+    restart: always
+    volumes:
+      - redis_data_prod:/data
+    networks:
+      - internal_db_network
+
+  # Evolution API (WhatsApp)
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution_api_prod
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:${DB_PASSWORD}@postgres:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_client_prod
+      CONFIG_SESSION_PHONE_CLIENT: "Chrome"
+      CONFIG_SESSION_PHONE_NAME: "Chrome"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      REDIS_ENABLED: "true"
+      REDIS_URI: redis://redis:6379
+      QR_CODE_ON_CHAT: "true"
+      DELETE_TOKEN_ON_DIE: "false"
+    command: >
+      bash -c "
+        echo 'Iniciando Evolution API (Producción)...' &&
+        node dist/main.js
+      "
+    networks:
+      - internal_db_network
+      - app_network
+    volumes:
+      - evolution_uploads_prod:/app/uploads
+
+  # Base de datos Principal del Negocio
+  backend-db:
+    image: postgres:15-alpine
+    container_name: backend_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - backend_data_prod:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql # Optional init script
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal_db_network
+
+  # Backend (NestJS)
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend_nestjs_prod
+    restart: always
+    env_file:
+      - .env.production
+    depends_on:
+      backend-db:
+        condition: service_healthy
+      evolution:
+        condition: service_started
+    networks:
+      - internal_db_network
+      - app_network
+    volumes:
+      - uploads_data_prod:/app/uploads
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Frontend (Nginx optimizado)
+  frontend:
+    build:
+      context: ../frontend-senor-tintas
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: frontend_nginx_prod
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - app_network
+
+  # Reverse Proxy (Caddy) - Maneja SSL, compresión GZIP, HTTP/2 y redirige puertos internos
+  caddy:
+    image: caddy:2.7-alpine
+    container_name: caddy_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - app_network
+    depends_on:
+      - frontend
+      - backend
+      - evolution
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:
+  backend_data_prod:
+  uploads_data_prod:
+  evolution_uploads_prod:
+  caddy_data:
+  caddy_config:
+
+networks:
+  # Red interna solo para bases de datos (Caddy y Frontend no pueden acceder)
+  internal_db_network:
+    internal: true
+  # Red de la aplicación, el proxy accede a Backend, Frontend y Evolution
+  app_network:
+    driver: bridge

@@ -103,6 +103,7 @@ export class ConversationService {
       content: data.messageText,
       wa_message_id: data.waMessageId,
       timestamp: data.timestamp,
+      created_by: '00000000-0000-4000-8000-000000000001',
     });
     await this.messageRepo.save(message);
 
@@ -123,6 +124,7 @@ export class ConversationService {
       content: data.messageText,
       wa_message_id: data.waMessageId,
       timestamp: data.timestamp,
+      created_by: '00000000-0000-4000-8000-000000000001',
     });
     await this.messageRepo.save(message);
 
@@ -145,6 +147,7 @@ export class ConversationService {
       message_type: WhatsAppMessageType.Text,
       content: text,
       timestamp: new Date(),
+      created_by: '00000000-0000-4000-8000-000000000001',
     });
     await this.messageRepo.save(message);
 

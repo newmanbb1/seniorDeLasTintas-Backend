@@ -30,6 +30,6 @@ export class UploadsService {
 
   getFileUrl(filename: string, type: 'images' | 'videos'): string {
     const basePath = type === 'images' ? this.imagesPath : this.videosPath;
-    return `/${basePath}/${filename}`;
+    return `/api/${basePath}/${filename}`;
   }
 }

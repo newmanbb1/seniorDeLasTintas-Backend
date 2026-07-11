@@ -1,0 +1,27 @@
+# Caddyfile for Production Reverse Proxy
+
+# Reemplaza 'tudominio.com' por el dominio real en producción
+# Caddy se encargará de generar certificados SSL (HTTPS) de Let's Encrypt automáticamente
+# tudominio.com {
+# }
+
+# Para uso local sin dominio (por ejemplo en VPS antes de mapear DNS), usa :80
+:80 {
+    # 1. API Backend Routing
+    handle_path /api/* {
+        reverse_proxy backend:3000
+    }
+
+    # 2. Evolution API (Webhooks / WhatsApp WebSocket)
+    handle_path /evolution/* {
+        reverse_proxy evolution:8080
+    }
+
+    # 3. Frontend App
+    handle /* {
+        reverse_proxy frontend:80
+    }
+
+    # Compresión gzip
+    encode gzip zstd
+}

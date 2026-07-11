@@ -175,6 +175,8 @@ export class ChatbotService {
   }
 
   private getCategoryResponse(option: string): string {
+    const publicUrl = this.configService.get<string>('PUBLIC_APP_URL') || 'http://localhost:3001';
+    
     switch (option) {
       case '1':
         return (
@@ -188,7 +190,7 @@ export class ChatbotService {
           '✅ Precios competitivos\n' +
           '✅ Entregas inmediatas\n\n' +
           '🔗 *Ver catálogo completo:*\n' +
-          'https://tintas.com/consulta/stock\n\n' +
+          `${publicUrl}/\n\n` +
           'Escribe 0 para volver al menú'
         );
       case '2':
@@ -202,7 +204,7 @@ export class ChatbotService {
           '✅ Entregas inmediatas\n' +
           '✅ Precios especiales por mayoreo\n\n' +
           '🔗 *Ver catálogo de tóner:*\n' +
-          'https://tintas.com/consulta/stock?categoria=toner\n\n' +
+          `${publicUrl}/\n\n` +
           'Escribe 0 para volver al menú'
         );
       case '3':
@@ -215,7 +217,7 @@ export class ChatbotService {
           '• Diagnóstico sin costo\n\n' +
           '📍 Visítanos o contáctanos para agendar una cita\n\n' +
           '🔗 *Más información:*\n' +
-          'https://tintas.com/consulta/servicio-tecnico\n\n' +
+          `${publicUrl}/\n\n` +
           'Escribe 0 para volver al menú'
         );
       case '4':
@@ -228,7 +230,7 @@ export class ChatbotService {
           '• Fusores\n' +
           '• Y más...\n\n' +
           '🔗 *Ver catálogo de repuestos:*\n' +
-          'https://tintas.com/consulta/repuestos\n\n' +
+          `${publicUrl}/\n\n` +
           'Escribe 0 para volver al menú'
         );
       default:
@@ -411,8 +413,7 @@ export class ChatbotService {
       user_message: userMessage,
       bot_response: botResponse,
       timestamp: new Date(),
-      created_by:
-        this.configService.get<string>('SYSTEM_AUDIT_USER_ID') ?? 'chatbot',
+      created_by: '00000000-0000-4000-8000-000000000001',
     });
     await this.logRepository.save(log);
   }

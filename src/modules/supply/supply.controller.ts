@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -55,7 +56,7 @@ export class SupplyController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
+  @AllowAnonymous()
   @ApiOperation({ summary: 'List supplies with pagination and filters' })
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {
