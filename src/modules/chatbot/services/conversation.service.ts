@@ -8,6 +8,7 @@ import {
   WhatsAppMessageType,
 } from '../entities/whatsapp-message.entity';
 import { EvolutionApiService } from './evolution-api.service';
+import { FilterConversation, FilterConversationMessage } from '../dto/filter-conversation.dto';
 
 export interface MessageEvent {
   data: string;
@@ -37,18 +38,43 @@ export class ConversationService {
     this.eventSubject.next({ type: event, data: JSON.stringify(data) });
   }
 
-  async getConversations(): Promise<WhatsAppSession[]> {
-    return this.sessionRepo.find({
+  async getConversations(filters: FilterConversation = {}): Promise<{
+    data: WhatsAppSession[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const { limit = 30, offset = 0 } = filters;
+    const [data, total] = await this.sessionRepo.findAndCount({
       order: { last_message_at: 'DESC' },
+      take: limit,
+      skip: offset,
     });
+    return { data, meta: { total, limit, offset } };
   }
 
-  async getMessages(phone: string): Promise<WhatsAppMessage[]> {
-    return this.messageRepo.find({
-      where: { phone_number: phone },
+  async getMessages(
+    phone: string,
+    filters: FilterConversationMessage = {},
+  ): Promise<{
+    data: WhatsAppMessage[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const { limit = 50, offset = 0, latest = false } = filters;
+
+    const where = { phone_number: phone };
+    const total = await this.messageRepo.count({ where });
+
+    const effectiveOffset = latest
+      ? Math.max(0, total - limit)
+      : offset;
+
+    const data = await this.messageRepo.find({
+      where,
       order: { timestamp: 'ASC' },
-      take: 100,
+      take: limit,
+      skip: effectiveOffset,
     });
+
+    return { data, meta: { total, limit, offset: effectiveOffset } };
   }
 
   async markAsRead(phone: string): Promise<void> {

@@ -13,19 +13,19 @@ import { WhatsAppMessage } from './entities/whatsapp-message.entity';
 import { ChatbotLog } from './entities/chatbot-log.entity';
 import { Branch } from '../branch/entities/branch.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
-import { Supply } from '../supply/entities/supply.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
+import { SupplyModule } from '../supply/supply.module';
 
 @Module({
   imports: [
+    SupplyModule,
     TypeOrmModule.forFeature([
       WhatsAppSession,
       WhatsAppMessage,
       ChatbotLog,
       Branch,
       Inventory,
-      Supply,
       Employee,
       Attendance,
     ]),

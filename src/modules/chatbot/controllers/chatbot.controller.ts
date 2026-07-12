@@ -28,6 +28,10 @@ import { ChatbotService } from '../services/chatbot.service';
 import { ConversationService, MessageEvent } from '../services/conversation.service';
 import { EvolutionApiService } from '../services/evolution-api.service';
 import { FilterChatbotLog } from '../dto/filter-chatbot-log.dto';
+import {
+  FilterConversation,
+  FilterConversationMessage,
+} from '../dto/filter-conversation.dto';
 import { SendMessageDto } from '../dto/send-message.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
@@ -408,8 +412,8 @@ export class ChatbotController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Listar conversaciones de WhatsApp' })
   @ApiOkWrapped()
-  async getConversations() {
-    return ok(await this.conversationService.getConversations());
+  async getConversations(@Query() filters: FilterConversation) {
+    return ok(await this.conversationService.getConversations(filters));
   }
 
   @Get('conversations/:phone/messages')
@@ -418,8 +422,11 @@ export class ChatbotController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener mensajes de una conversación' })
   @ApiOkWrapped()
-  async getMessages(@Param('phone') phone: string) {
-    return ok(await this.conversationService.getMessages(phone));
+  async getMessages(
+    @Param('phone') phone: string,
+    @Query() filters: FilterConversationMessage,
+  ) {
+    return ok(await this.conversationService.getMessages(phone, filters));
   }
 
   @Post('conversations/:phone/read')

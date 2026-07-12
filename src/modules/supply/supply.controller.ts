@@ -29,6 +29,7 @@ import { SupplyService } from './supply.service';
 import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { FilterSupply } from './dto/filter-supply.dto';
+import { FilterPublicSupply } from './dto/filter-public-supply.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';
@@ -61,6 +62,22 @@ export class SupplyController {
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {
     return ok(await this.supplyService.findAll(filters));
+  }
+
+  @Get('public')
+  @AllowAnonymous()
+  @ApiOperation({ summary: 'List public catalog (active supplies only, paginated)' })
+  @ApiOkWrapped()
+  async findAllPublic(@Query() filters: FilterPublicSupply) {
+    return ok(await this.supplyService.findAllPublicPaginated(filters));
+  }
+
+  @Get('public/:id')
+  @AllowAnonymous()
+  @ApiOperation({ summary: 'Get public supply detail by id (catalog)' })
+  @ApiOkWrapped()
+  async findOnePublic(@Param('id', ParseUUIDPipe) id: string) {
+    return ok(await this.supplyService.findOnePublic(id));
   }
 
   @Get(':id')

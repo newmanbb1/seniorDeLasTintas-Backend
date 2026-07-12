@@ -9,9 +9,9 @@ import {
 import { ChatbotLog, ChatbotIntention } from '../entities/chatbot-log.entity';
 import { Branch } from '../../branch/entities/branch.entity';
 import { Inventory } from '../../inventory/entities/inventory.entity';
-import { Supply } from '../../supply/entities/supply.entity';
 import { Employee } from '../../employee/entities/employee.entity';
 import { Attendance } from '../../attendance/entities/attendance.entity';
+import { SupplyService, PublicCatalogItem } from '../../supply/supply.service';
 import { EvolutionApiService } from './evolution-api.service';
 import { WhatsAppSessionService } from './whatsapp-session.service';
 import { ConversationService } from './conversation.service';
@@ -28,8 +28,7 @@ export class ChatbotService {
     private readonly branchRepository: Repository<Branch>,
     @InjectRepository(Inventory)
     private readonly inventoryRepository: Repository<Inventory>,
-    @InjectRepository(Supply)
-    private readonly supplyRepository: Repository<Supply>,
+    private readonly supplyService: SupplyService,
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
     @InjectRepository(Attendance)
@@ -60,7 +59,17 @@ export class ChatbotService {
       pushName,
     );
     const normalizedMessage = message.trim().toLowerCase();
-    const aiResult = await this.aiService.classifyIntent(message);
+
+    const { data: recentMessages } = await this.conversationService.getMessages(
+      phoneNumber,
+      { limit: 8, latest: true },
+    );
+    const recentContext = recentMessages.slice(-8).map((msg) => ({
+      role: (msg.from_me ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: msg.content || '',
+    }));
+
+    const aiResult = await this.aiService.classifyIntent(message, recentContext);
     const detectedIntention = this.mapAiIntentToLogIntention(aiResult);
 
     let response = '';
@@ -70,7 +79,7 @@ export class ChatbotService {
       response = this.getCategoryMenu();
       newState = WhatsAppFlowState.SeleccionandoCategoria;
     } else if (['1', '2', '3', '4'].includes(normalizedMessage)) {
-      response = this.getCategoryResponse(normalizedMessage);
+      response = await this.getCategoryResponse(normalizedMessage);
       newState = WhatsAppFlowState.SeleccionandoCategoria;
     } else {
       switch (aiResult.intencion) {
@@ -88,24 +97,25 @@ export class ChatbotService {
           };
           response = await this.handleCategoryQuery(categorySearchMap[aiResult.intencion], aiResult);
           if (!response) {
-            response = aiResult.respuesta || this.getCategoryResponse(
-              { CATEGORIA_TINTAS: '1', CATEGORIA_TONER: '2', CATEGORIA_REPUESTO: '4' }[aiResult.intencion]
-            );
+            response = this.getProductNotFoundMessage(aiResult);
           }
           newState = WhatsAppFlowState.SeleccionandoCategoria;
           break;
         case 'CATEGORIA_SERVICIO_TECNICO':
-          response = aiResult.respuesta || this.getCategoryResponse('3');
+          response = this.getServicioTecnicoMessage();
+          newState = WhatsAppFlowState.SeleccionandoCategoria;
+          break;
+        case 'CONSULTAR_PRECIO':
+          response = await this.handlePriceQuery(aiResult, message);
+          if (!response) {
+            response = this.getProductNotFoundMessage(aiResult);
+          }
           newState = WhatsAppFlowState.SeleccionandoCategoria;
           break;
         case 'CONSULTAR_STOCK':
           response = await this.handleStockWithAI(aiResult);
           if (!response) {
-            const brandResponse = aiResult.respuesta ||
-              `Claro, trabajamos con ${aiResult.parametros?.marca || 'esa marca'} 😊\n\n` +
-              'Tenemos tintas y tóner originales y compatibles. ¿Buscas algún producto en específico?\n' +
-              'Escribe 0 para volver al menú';
-            response = brandResponse;
+            response = this.getProductNotFoundMessage(aiResult);
           }
           newState = WhatsAppFlowState.SeleccionandoCategoria;
           break;
@@ -118,7 +128,10 @@ export class ChatbotService {
           newState = WhatsAppFlowState.SeleccionandoCategoria;
           break;
         default:
-          response = aiResult.respuesta || this.getCategoryMenu();
+          response = await this.searchCatalogByMessage(message, aiResult);
+          if (!response) {
+            response = this.getClarificationMessage();
+          }
           newState = WhatsAppFlowState.SeleccionandoCategoria;
       }
     }
@@ -155,6 +168,7 @@ export class ChatbotService {
       CATEGORIA_TONER: ChatbotIntention.CategoriaToner,
       CATEGORIA_SERVICIO_TECNICO: ChatbotIntention.CategoriaServicioTecnico,
       CATEGORIA_REPUESTO: ChatbotIntention.CategoriaRepuesto,
+      CONSULTAR_PRECIO: ChatbotIntention.ConsultarStock,
       CONSULTAR_STOCK: ChatbotIntention.ConsultarStock,
       CONSULTAR_HORARIO: ChatbotIntention.ConsultarHorario,
       MENU: ChatbotIntention.MenuPrincipal,
@@ -162,6 +176,30 @@ export class ChatbotService {
     return map[aiResult.intencion] || ChatbotIntention.Unknown;
   }
 
+  private getPublicCatalogUrl(): string {
+    return this.configService.get<string>('PUBLIC_APP_URL') || 'http://localhost:3001';
+  }
+
+  private getClarificationMessage(): string {
+    const publicUrl = this.getPublicCatalogUrl();
+    return (
+      'No encontré ese producto en nuestro catálogo 😔\n\n' +
+      'Puedes escribir el nombre exacto del producto o revisar todo aquí:\n' +
+      `🔗 ${publicUrl}/\n\n` +
+      'Escribe 0 para volver al menú'
+    );
+  }
+
+  private getServicioTecnicoMessage(): string {
+    const publicUrl = this.getPublicCatalogUrl();
+    return (
+      '*SERVICIO TÉCNICO*\n\n' +
+      'Ofrecemos mantenimiento y reparación de impresoras.\n' +
+      'Visítanos en nuestras sucursales o escríbenos para coordinar.\n\n' +
+      `🔗 ${publicUrl}/\n\n` +
+      'Escribe 0 para volver al menú'
+    );
+  }
   private getCategoryMenu(): string {
     return (
       '*Señor de las Tintas* 🎨\n\n' +
@@ -174,122 +212,277 @@ export class ChatbotService {
     );
   }
 
-  private getCategoryResponse(option: string): string {
-    const publicUrl = this.configService.get<string>('PUBLIC_APP_URL') || 'http://localhost:3001';
-    
-    switch (option) {
-      case '1':
-        return (
-          '*TINTAS*\n\n' +
-          'Tenemos tintas originales y compatibles para todas las marcas:\n' +
-          '• Canon\n' +
-          '• Epson\n' +
-          '• HP\n' +
-          '• Brother\n\n' +
-          '✅ Alta calidad\n' +
-          '✅ Precios competitivos\n' +
-          '✅ Entregas inmediatas\n\n' +
-          '🔗 *Ver catálogo completo:*\n' +
-          `${publicUrl}/\n\n` +
-          'Escribe 0 para volver al menú'
-        );
-      case '2':
-        return (
-          '*TÓNER*\n\n' +
-          'Disponemos de tóner original y compatible para:\n' +
-          '• Canon\n' +
-          '• HP\n' +
-          '• Samsung\n' +
-          '• Brother\n\n' +
-          '✅ Entregas inmediatas\n' +
-          '✅ Precios especiales por mayoreo\n\n' +
-          '🔗 *Ver catálogo de tóner:*\n' +
-          `${publicUrl}/\n\n` +
-          'Escribe 0 para volver al menú'
-        );
-      case '3':
-        return (
-          '*SERVICIO TÉCNICO*\n\n' +
-          'Ofrecemos:\n' +
-          '• Mantenimiento preventivo y correctivo\n' +
-          '• Reparación de impresoras\n' +
-          '• Instalación y configuración\n' +
-          '• Diagnóstico sin costo\n\n' +
-          '📍 Visítanos o contáctanos para agendar una cita\n\n' +
-          '🔗 *Más información:*\n' +
-          `${publicUrl}/\n\n` +
-          'Escribe 0 para volver al menú'
-        );
-      case '4':
-        return (
-          '*REPUESTOS*\n\n' +
-          'Contamos con repuestos originales y genéricos:\n' +
-          '• Cabezales\n' +
-          '• Bandejas de papel\n' +
-          '• Rodillos\n' +
-          '• Fusores\n' +
-          '• Y más...\n\n' +
-          '🔗 *Ver catálogo de repuestos:*\n' +
-          `${publicUrl}/\n\n` +
-          'Escribe 0 para volver al menú'
-        );
-      default:
-        return this.getCategoryMenu();
+  private async getCategoryResponse(option: string): Promise<string> {
+    const publicUrl = this.getPublicCatalogUrl();
+    const catalog = await this.supplyService.findAllPublicCatalog();
+
+    const categoryMap: Record<string, string> = {
+      '1': 'tintas',
+      '2': 'toner',
+      '4': 'repuestos',
+    };
+
+    if (option === '3') {
+      return this.getServicioTecnicoMessage();
     }
+
+    const categoryKey = categoryMap[option];
+    if (!categoryKey) {
+      return this.getCategoryMenu();
+    }
+
+    const items = catalog.filter((item) =>
+      item.category.toLowerCase().includes(categoryKey),
+    );
+
+    if (items.length === 0) {
+      return (
+        `No hay productos de *${categoryKey}* en el catálogo por ahora.\n\n` +
+        `🔗 Ver catálogo: ${publicUrl}/\n\n` +
+        'Escribe 0 para volver al menú'
+      );
+    }
+
+    const title = categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1);
+    const lines = [`*${title.toUpperCase()}* — catálogo disponible:\n`];
+
+    for (const item of items.slice(0, 8)) {
+      lines.push(...this.formatCatalogItemBlock(item));
+    }
+
+    if (items.length > 8) {
+      lines.push(`...y ${items.length - 8} productos más en el catálogo\n`);
+    }
+
+    lines.push(
+      `🔗 *Ver catálogo completo:*\n${publicUrl}/\n\n` +
+      'Escribe 0 para volver al menú',
+    );
+
+    return lines.join('\n');
   }
 
-  private async handleStockWithAI(aiResult: AiIntentResult): Promise<string> {
+  private formatPrice(value: number | string): string {
+    const amount = Number(value) || 0;
+    return `Bs ${amount.toFixed(2)}`;
+  }
+
+  private getProductNotFoundMessage(aiResult: AiIntentResult): string {
+    const publicUrl = this.getPublicCatalogUrl();
+    const marca = aiResult.parametros?.marca;
+    const producto = aiResult.parametros?.producto;
+    const ref = [marca, producto].filter(Boolean).join(' ');
+
+    return (
+      `No encontré *${ref || 'ese producto'}* en nuestro catálogo actual 😔\n\n` +
+      'Puedes indicarme el nombre exacto del producto o revisar todo aquí:\n' +
+      `🔗 ${publicUrl}/\n\n` +
+      'Escribe 0 para volver al menú'
+    );
+  }
+
+  private async loadPublicCatalog(): Promise<PublicCatalogItem[]> {
+    return this.supplyService.findAllPublicCatalog();
+  }
+
+  private catalogMatchesSearch(
+    item: PublicCatalogItem,
+    marca: string,
+    producto: string,
+    extraTerms: string[] = [],
+  ): boolean {
+    const haystack = [
+      item.name,
+      item.category,
+      item.brand,
+      item.code,
+      item.compatibility,
+      item.commercial_description,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    const terms = [
+      ...extraTerms,
+      ...(marca ? marca.split(/\s+/) : []),
+      ...(producto ? producto.split(/\s+/) : []),
+    ]
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 1);
+
+    if (terms.length === 0) return true;
+
+    const matchedTerms = terms.filter((term) => haystack.includes(term));
+    return matchedTerms.length >= Math.min(terms.length, Math.max(1, Math.ceil(terms.length * 0.6)));
+  }
+
+  private formatCatalogItemBlock(
+    item: PublicCatalogItem,
+    options: { showPrice?: boolean; showStock?: boolean; prefix?: string } = {},
+  ): string[] {
+    const { showPrice = true, showStock = true, prefix = '🎨' } = options;
+    const publicUrl = this.getPublicCatalogUrl();
+    const lines: string[] = [];
+
+    lines.push(`${prefix} *${item.name}*`);
+
+    if (item.brand) {
+      lines.push(`   🏷️ Marca: ${item.brand}`);
+    }
+
+    if (showPrice) {
+      lines.push(`   💰 Precio: *${this.formatPrice(item.sale_price)}*`);
+    }
+
+    if (showStock) {
+      if (item.stock_by_branch.length === 0) {
+        lines.push('   😕 Sin stock por el momento');
+      } else {
+        for (const stock of item.stock_by_branch) {
+          const emoji = stock.quantity > 0 ? '✅' : '❌';
+          lines.push(
+            `   ${emoji} ${stock.branch_name}: ${stock.quantity} ${item.unit_of_measure}`,
+          );
+        }
+      }
+    }
+
+    if (item.compatibility) {
+      lines.push(`   🔧 Compatible: ${item.compatibility}`);
+    }
+
+    if (item.commercial_description) {
+      const desc = item.commercial_description.length > 120
+        ? `${item.commercial_description.slice(0, 117)}...`
+        : item.commercial_description;
+      lines.push(`   📝 ${desc}`);
+    }
+
+    lines.push(`   🔗 ${publicUrl}/producto/${item.id}`);
+    lines.push('');
+    return lines;
+  }
+
+  private filterCatalogItems(
+    catalog: PublicCatalogItem[],
+    aiResult: AiIntentResult,
+    category?: string,
+    rawMessage?: string,
+  ): PublicCatalogItem[] {
     const marca = aiResult.parametros?.marca?.toLowerCase() || '';
     const producto = aiResult.parametros?.producto?.toLowerCase() || '';
+    const extraTerms = rawMessage
+      ? rawMessage
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((t) => t.length > 2 && !['para', 'quiero', 'tengo', 'tienes', 'tinta', 'toner', 'precio', 'cuanto', 'cuesta'].includes(t))
+      : [];
 
-    const supplies = await this.supplyRepository.find({
-      where: { deleted_at: IsNull() },
-      relations: ['inventories', 'inventories.branch'],
-    });
+    let matched = catalog;
 
-    let matchedSupplies = supplies;
-
-    if (marca) {
-      matchedSupplies = matchedSupplies.filter(
-        (s) =>
-          s.name.toLowerCase().includes(marca) ||
-          s.category.toLowerCase().includes(marca),
-      );
-    }
-    if (producto) {
-      matchedSupplies = matchedSupplies.filter(
-        (s) =>
-          s.name.toLowerCase().includes(producto) ||
-          s.category.toLowerCase().includes(producto),
+    if (category) {
+      matched = matched.filter((item) =>
+        item.category.toLowerCase().includes(category.toLowerCase()),
       );
     }
 
-    if (matchedSupplies.length === 0) {
+    if (marca || producto || extraTerms.length > 0) {
+      matched = matched.filter((item) =>
+        this.catalogMatchesSearch(item, marca, producto, extraTerms),
+      );
+    }
+
+    return matched;
+  }
+
+  private async searchCatalogByMessage(
+    message: string,
+    aiResult: AiIntentResult,
+  ): Promise<string> {
+    const catalog = await this.loadPublicCatalog();
+    const matched = this.filterCatalogItems(catalog, aiResult, undefined, message);
+
+    if (matched.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = ['Esto es lo que encontré en nuestro catálogo:\n'];
+    for (const item of matched.slice(0, 5)) {
+      lines.push(...this.formatCatalogItemBlock(item, { showPrice: true, showStock: true }));
+    }
+
+    if (matched.length > 5) {
+      lines.push(`...y ${matched.length - 5} productos más\n`);
+    }
+
+    lines.push(
+      `🔗 Ver catálogo completo: ${this.getPublicCatalogUrl()}/\n\n` +
+      'Escribe 0 para volver al menú',
+    );
+
+    return lines.join('\n');
+  }
+
+  private async handlePriceQuery(
+    aiResult: AiIntentResult,
+    rawMessage: string,
+  ): Promise<string> {
+    const catalog = await this.loadPublicCatalog();
+    const matched = this.filterCatalogItems(catalog, aiResult, undefined, rawMessage);
+
+    if (matched.length === 0) {
       return '';
     }
 
     const lines: string[] = [];
-    for (const supply of matchedSupplies.slice(0, 5)) {
-      const inventories =
-        supply.inventories?.filter((inv) => !inv.deleted_at) || [];
-      lines.push(`*${supply.name}* (${supply.category})`);
-      if (inventories.length === 0) {
-        lines.push('  😕 Sin stock por el momento');
-      } else {
-        for (const inv of inventories) {
-          lines.push(
-            `  📍 ${inv.branch?.name || 'Sucursal'}: ${inv.current_quantity} ${supply.unit_of_measure}`,
-          );
-        }
-      }
-      lines.push('');
+    const ref = [aiResult.parametros?.marca, aiResult.parametros?.producto]
+      .filter(Boolean)
+      .join(' ');
+
+    lines.push(
+      ref
+        ? `Estos son los precios del catálogo para *${ref}*:\n`
+        : 'Estos son los precios de nuestro catálogo:\n',
+    );
+
+    for (const item of matched.slice(0, 5)) {
+      lines.push(...this.formatCatalogItemBlock(item, { showPrice: true, showStock: true }));
     }
 
-    const intro = marca || producto
-      ? `Aquí tienes lo que encontré sobre *${[marca, producto].filter(Boolean).join(' ')}*:\n\n`
-      : 'Estos son algunos de nuestros productos:\n\n';
+    if (matched.length > 5) {
+      lines.push(`...y ${matched.length - 5} productos más\n`);
+    }
 
-    lines.unshift(intro);
+    lines.push(
+      '¿Te interesa alguno? Puedes pedirlo por aquí o ver el detalle en el enlace.\n' +
+      'Escribe 0 para volver al menú',
+    );
+
+    return lines.join('\n');
+  }
+
+  private async handleStockWithAI(aiResult: AiIntentResult): Promise<string> {
+    const catalog = await this.loadPublicCatalog();
+    const matched = this.filterCatalogItems(catalog, aiResult);
+
+    if (matched.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    const marca = aiResult.parametros?.marca || '';
+    const producto = aiResult.parametros?.producto || '';
+
+    const intro = marca || producto
+      ? `Disponibilidad en catálogo para *${[marca, producto].filter(Boolean).join(' ')}*:\n\n`
+      : 'Estos son algunos productos de nuestro catálogo:\n\n';
+
+    lines.push(intro);
+
+    for (const item of matched.slice(0, 5)) {
+      lines.push(...this.formatCatalogItemBlock(item, { showPrice: true, showStock: true, prefix: '•' }));
+    }
 
     lines.push(
       '¿Quieres consultar otro producto? Solo dime el nombre.\n' +
@@ -300,32 +493,8 @@ export class ChatbotService {
   }
 
   private async handleCategoryQuery(category: string, aiResult: AiIntentResult): Promise<string> {
-    const marca = aiResult.parametros?.marca?.toLowerCase() || '';
-    const producto = aiResult.parametros?.producto?.toLowerCase() || '';
-
-    const supplies = await this.supplyRepository.find({
-      where: { deleted_at: IsNull() },
-      relations: ['inventories', 'inventories.branch'],
-    });
-
-    let matched = supplies.filter(
-      (s) => s.category.toLowerCase() === category,
-    );
-
-    if (marca) {
-      matched = matched.filter(
-        (s) =>
-          s.name.toLowerCase().includes(marca) ||
-          s.category.toLowerCase().includes(marca),
-      );
-    }
-    if (producto) {
-      matched = matched.filter(
-        (s) =>
-          s.name.toLowerCase().includes(producto) ||
-          s.category.toLowerCase().includes(producto),
-      );
-    }
+    const catalog = await this.loadPublicCatalog();
+    const matched = this.filterCatalogItems(catalog, aiResult, category);
 
     if (matched.length === 0) {
       return '';
@@ -333,23 +502,10 @@ export class ChatbotService {
 
     const lines: string[] = [];
     const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
-    lines.push(`¡Claro! Esto es lo que tenemos en *${categoryLabel}* actualmente:\n`);
+    lines.push(`*${categoryLabel}* — productos disponibles en catálogo:\n`);
 
-    for (const supply of matched.slice(0, 5)) {
-      const inventories =
-        supply.inventories?.filter((inv) => !inv.deleted_at) || [];
-      lines.push(`🎨 *${supply.name}*`);
-      if (inventories.length === 0) {
-        lines.push('   😕 Sin stock por el momento');
-      } else {
-        for (const inv of inventories) {
-          const emoji = inv.current_quantity > 0 ? '✅' : '❌';
-          lines.push(
-            `   ${emoji} ${inv.branch?.name || 'Sucursal'}: ${inv.current_quantity} ${supply.unit_of_measure}`,
-          );
-        }
-      }
-      lines.push('');
+    for (const item of matched.slice(0, 5)) {
+      lines.push(...this.formatCatalogItemBlock(item, { showPrice: true, showStock: true }));
     }
 
     if (matched.length > 5) {
@@ -357,7 +513,8 @@ export class ChatbotService {
     }
 
     lines.push(
-      '¿Buscas alguno en particular o te interesa algo más?\n' +
+      `🔗 Ver catálogo: ${this.getPublicCatalogUrl()}/\n\n` +
+      '¿Buscas alguno en particular? Escribe el nombre.\n' +
       'Escribe 0 para volver al menú',
     );
 

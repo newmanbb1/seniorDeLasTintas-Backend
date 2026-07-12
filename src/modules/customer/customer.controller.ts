@@ -28,6 +28,7 @@ import { CustomerService } from './customer.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { FilterCustomer } from './dto/filter-customer.dto';
+import { FilterCustomerOrders } from './dto/filter-customer-orders.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';
@@ -74,8 +75,11 @@ export class CustomerController {
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'Get order history by customer' })
   @ApiOkWrapped()
-  async findOrders(@Param('id', ParseUUIDPipe) id: string) {
-    return ok(await this.customerService.findOrders(id));
+  async findOrders(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() filters: FilterCustomerOrders,
+  ) {
+    return ok(await this.customerService.findOrders(id, filters));
   }
 
   @Patch(':id')

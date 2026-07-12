@@ -11,6 +11,29 @@ import { StockTransfer } from '../stock-transfer/entities/stock-transfer.entity'
 import { CreateSupplyDto } from './dto/create-supply.dto';
 import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { FilterSupply } from './dto/filter-supply.dto';
+import { FilterPublicSupply } from './dto/filter-public-supply.dto';
+
+export interface PublicSupply {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  unit_of_measure: string;
+  images: string[];
+  videos: string[];
+  sale_price: number;
+  brand: string;
+  compatibility: string;
+  commercial_description: string;
+  is_active: boolean;
+}
+
+export interface PublicCatalogItem extends PublicSupply {
+  stock_by_branch: Array<{
+    branch_name: string;
+    quantity: number;
+  }>;
+}
 
 @Injectable()
 export class SupplyService {
@@ -76,6 +99,109 @@ export class SupplyService {
       throw new NotFoundException('Insumo no encontrado');
     }
     return supply;
+  }
+
+  async findOnePublic(id: string): Promise<PublicSupply> {
+    const supply = await this.supplyRepository.findOne({
+      where: { id, is_active: true, deleted_at: IsNull() },
+    });
+    if (!supply) {
+      throw new NotFoundException('Producto no encontrado');
+    }
+    return {
+      id: supply.id,
+      code: supply.code,
+      name: supply.name,
+      category: supply.category,
+      unit_of_measure: supply.unit_of_measure,
+      images: supply.images ?? [],
+      videos: supply.videos ?? [],
+      sale_price: supply.sale_price,
+      brand: supply.brand,
+      compatibility: supply.compatibility,
+      commercial_description: supply.commercial_description,
+      is_active: supply.is_active,
+    };
+  }
+
+  /** Misma fuente de datos que el catálogo público del cliente (solo activos). */
+  async findAllPublicPaginated(filters: FilterPublicSupply): Promise<{
+    data: PublicCatalogItem[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const { limit = 10, offset = 0, name, category } = filters;
+
+    const where: Record<string, unknown> = {
+      deleted_at: IsNull(),
+      is_active: true,
+    };
+
+    const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
+    if (name) {
+      where.name = Like(`%${sanitizeLike(name)}%`);
+    }
+    if (category) {
+      where.category = Like(`%${sanitizeLike(category)}%`);
+    }
+
+    const [supplies, total] = await this.supplyRepository.findAndCount({
+      where,
+      relations: ['inventories', 'inventories.branch'],
+      take: limit,
+      skip: offset,
+      order: { category: 'ASC', name: 'ASC' },
+    });
+
+    return {
+      data: supplies.map((supply) => this.toPublicCatalogItem(supply)),
+      meta: { total, limit, offset },
+    };
+  }
+
+  /** Carga todos los productos activos del catálogo público (para chatbot). */
+  async findAllPublicCatalog(): Promise<PublicCatalogItem[]> {
+    const pageSize = 100;
+    let offset = 0;
+    let total = Infinity;
+    const all: PublicCatalogItem[] = [];
+
+    while (offset < total) {
+      const { data, meta } = await this.findAllPublicPaginated({
+        limit: pageSize,
+        offset,
+      });
+      all.push(...data);
+      total = meta.total;
+      offset += meta.limit;
+    }
+
+    return all;
+  }
+
+  private toPublicCatalogItem(supply: Supply): PublicCatalogItem {
+    const stock_by_branch =
+      supply.inventories
+        ?.filter((inv) => !inv.deleted_at)
+        .map((inv) => ({
+          branch_name: inv.branch?.name || 'Sucursal',
+          quantity: inv.current_quantity,
+        })) ?? [];
+
+    return {
+      id: supply.id,
+      code: supply.code,
+      name: supply.name,
+      category: supply.category,
+      unit_of_measure: supply.unit_of_measure,
+      images: supply.images ?? [],
+      videos: supply.videos ?? [],
+      sale_price: supply.sale_price,
+      brand: supply.brand,
+      compatibility: supply.compatibility,
+      commercial_description: supply.commercial_description,
+      is_active: supply.is_active,
+      stock_by_branch,
+    };
   }
 
   async update(

@@ -6,6 +6,7 @@ import { Order } from '../order/entities/order.entity';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { FilterCustomer } from './dto/filter-customer.dto';
+import { FilterCustomerOrders } from './dto/filter-customer-orders.dto';
 
 @Injectable()
 export class CustomerService {
@@ -82,13 +83,25 @@ export class CustomerService {
     return customer;
   }
 
-  async findOrders(id: string): Promise<Order[]> {
+  async findOrders(
+    id: string,
+    filters: FilterCustomerOrders = {},
+  ): Promise<{
+    data: Order[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
     const customer = await this.findOne(id);
-    return this.orderRepository.find({
+    const { limit = 10, offset = 0 } = filters;
+
+    const [data, total] = await this.orderRepository.findAndCount({
       where: { customer: { id: customer.id }, deleted_at: IsNull() },
       relations: ['order_details', 'order_details.supply', 'branch'],
       order: { created_at: 'DESC' },
+      take: limit,
+      skip: offset,
     });
+
+    return { data, meta: { total, limit, offset } };
   }
 
   async update(id: string, dto: UpdateCustomerDto, userId: string): Promise<Customer> {
