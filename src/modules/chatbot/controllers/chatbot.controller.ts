@@ -56,13 +56,12 @@ export class ChatbotController {
   @ApiOperation({ summary: 'SSE stream de eventos en tiempo real' })
   events(@Req() req: any): Observable<MessageEvent> {
     const authHeader = req.headers?.authorization;
-    const queryToken = req.query?.token;
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
-      : queryToken;
+      : null;
 
     if (!token) {
-      throw new UnauthorizedException('Token requerido');
+      throw new UnauthorizedException('Token requerido en header Authorization');
     }
     try {
       const payload = this.jwtService.verify(token);

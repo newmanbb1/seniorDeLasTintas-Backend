@@ -1,27 +1,34 @@
 # Caddyfile for Production Reverse Proxy
-
-# Reemplaza 'tudominio.com' por el dominio real en producción
-# Caddy se encargará de generar certificados SSL (HTTPS) de Let's Encrypt automáticamente
+#
+# Con dominio (recomendado): descomenta el bloque de abajo y reemplaza tudominio.com
+# Caddy obtiene certificados SSL de Let's Encrypt automaticamente.
+#
 # tudominio.com {
+#     encode gzip zstd
+#
+#     handle /api/* {
+#         reverse_proxy backend:3000
+#     }
+#
+#     handle /* {
+#         reverse_proxy frontend:80
+#     }
 # }
 
-# Para uso local sin dominio (por ejemplo en VPS antes de mapear DNS), usa :80
+# Sin dominio (solo HTTP, pruebas en VPS antes de DNS):
 :80 {
-    # 1. API Backend Routing
-    handle_path /api/* {
+    # API Backend — usar handle (NO handle_path) para preservar el prefijo /api
+    handle /api/* {
         reverse_proxy backend:3000
     }
 
-    # 2. Evolution API (Webhooks / WhatsApp WebSocket)
-    handle_path /evolution/* {
-        reverse_proxy evolution:8080
-    }
-
-    # 3. Frontend App
+    # Frontend SPA
     handle /* {
         reverse_proxy frontend:80
     }
 
-    # Compresión gzip
     encode gzip zstd
 }
+
+# Evolution API NO se expone publicamente.
+# El backend se conecta internamente a evolution:8080 en la red Docker.

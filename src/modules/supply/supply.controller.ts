@@ -57,7 +57,7 @@ export class SupplyController {
   }
 
   @Get()
-  @AllowAnonymous()
+  @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'List supplies with pagination and filters' })
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {

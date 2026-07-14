@@ -78,7 +78,6 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - backend_data_prod:/var/lib/postgresql/data
-      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql # Optional init script
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
       interval: 10s
@@ -143,7 +142,6 @@ services:
     depends_on:
       - frontend
       - backend
-      - evolution
 
 volumes:
   postgres_data_prod:

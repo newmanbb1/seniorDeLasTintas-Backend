@@ -5,7 +5,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SeedService } from './seed.service';
@@ -18,7 +20,10 @@ import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 @ApiTags('seed')
 @Controller('seed')
 export class SeedController {
-  constructor(private readonly seedService: SeedService) {}
+  constructor(
+    private readonly seedService: SeedService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('init')
   @Throttle({ default: { limit: 3, ttl: 3600000 } })
@@ -26,6 +31,9 @@ export class SeedController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Inicializar datos por primera vez (sin auth, solo si no hay admin)' })
   async init() {
+    if (this.configService.get<string>('SEED_ENDPOINT_ENABLED') === 'false') {
+      throw new ForbiddenException('Endpoint de seed deshabilitado');
+    }
     const result = await this.seedService.init();
     return {
       success: true,
