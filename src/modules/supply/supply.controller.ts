@@ -30,6 +30,7 @@ import { UpdateSupplyDto } from './dto/update-supply.dto';
 import { FilterSupply } from './dto/filter-supply.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import { Roles, GetUser } from '../../common/decorators';
 import { UserRole } from '../auth/entities/user.entity';
 
@@ -52,6 +53,15 @@ export class SupplyController {
     @GetUser('id') userId: string,
   ) {
     return ok(await this.supplyService.create(createSupplyDto, userId));
+  }
+
+  @Get('public')
+  @AllowAnonymous()
+  @ApiOperation({ summary: 'Listar insumos activos (catálogo público)' })
+  @ApiOkWrapped()
+  async findAllPublic(@Query() filters: FilterSupply) {
+    const { limit = 100, offset = 0 } = filters;
+    return ok(await this.supplyService.findAllPublic(limit, offset));
   }
 
   @Get()

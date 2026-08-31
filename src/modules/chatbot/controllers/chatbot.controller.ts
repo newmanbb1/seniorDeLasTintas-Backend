@@ -32,6 +32,7 @@ import { SendMessageDto } from '../dto/send-message.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { WebhookAuthGuard } from 'src/common/guards/webhook-auth.guard';
+import { AllowAnonymous } from 'src/common/guards/allow-anon.decorator';
 import { Roles } from 'src/common/decorators';
 import { UserRole } from 'src/modules/auth/entities/user.entity';
 
@@ -46,6 +47,18 @@ export class ChatbotController {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
   ) {}
+
+  @Get('public-info')
+  @AllowAnonymous()
+  @SkipThrottle()
+  @ApiOperation({ summary: 'Información pública del chatbot (número WhatsApp)' })
+  @ApiOkWrapped()
+  getPublicInfo() {
+    const whatsappNumber =
+      this.configService.get<string>('WHATSAPP_NUMBER')?.replace(/\D/g, '') ||
+      '';
+    return ok({ whatsappNumber });
+  }
 
   @Sse('events')
   @ApiOperation({ summary: 'SSE stream de eventos en tiempo real' })

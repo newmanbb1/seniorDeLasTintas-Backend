@@ -68,6 +68,34 @@ export class SupplyService {
     return { data, meta: { total, limit, offset } };
   }
 
+  async findAllPublic(limit = 100, offset = 0): Promise<{
+    data: Supply[];
+    meta: { total: number; limit: number; offset: number };
+  }> {
+    const [data, total] = await this.supplyRepository.findAndCount({
+      where: { deleted_at: IsNull(), is_active: true },
+      take: limit,
+      skip: offset,
+      order: { name: 'ASC' },
+      select: [
+        'id',
+        'code',
+        'name',
+        'category',
+        'unit_of_measure',
+        'images',
+        'videos',
+        'is_active',
+        'sale_price',
+        'brand',
+        'compatibility',
+        'commercial_description',
+      ],
+    });
+
+    return { data, meta: { total, limit, offset } };
+  }
+
   async findOne(id: string): Promise<Supply> {
     const supply = await this.supplyRepository.findOne({
       where: { id, deleted_at: IsNull() },

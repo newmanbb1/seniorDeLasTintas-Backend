@@ -33,8 +33,10 @@ export class ConversationService {
     return this.eventSubject.asObservable();
   }
 
-  emit(event: string, data: any) {
-    this.eventSubject.next({ type: event, data: JSON.stringify(data) });
+  emit(event: string, payload: unknown) {
+    this.eventSubject.next({
+      data: JSON.stringify({ type: event, payload }),
+    });
   }
 
   async getConversations(): Promise<WhatsAppSession[]> {
