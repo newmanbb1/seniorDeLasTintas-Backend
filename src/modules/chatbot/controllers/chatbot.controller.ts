@@ -28,6 +28,10 @@ import { ChatbotService } from '../services/chatbot.service';
 import { ConversationService, MessageEvent } from '../services/conversation.service';
 import { EvolutionApiService } from '../services/evolution-api.service';
 import { FilterChatbotLog } from '../dto/filter-chatbot-log.dto';
+import {
+  FilterConversation,
+  FilterConversationMessage,
+} from '../dto/filter-conversation.dto';
 import { SendMessageDto } from '../dto/send-message.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
@@ -35,6 +39,7 @@ import { WebhookAuthGuard } from 'src/common/guards/webhook-auth.guard';
 import { AllowAnonymous } from 'src/common/guards/allow-anon.decorator';
 import { Roles } from 'src/common/decorators';
 import { UserRole } from 'src/modules/auth/entities/user.entity';
+import { AllowAnonymous } from 'src/common/guards/allow-anon.decorator';
 
 @ApiTags('chatbot')
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -64,13 +69,12 @@ export class ChatbotController {
   @ApiOperation({ summary: 'SSE stream de eventos en tiempo real' })
   events(@Req() req: any): Observable<MessageEvent> {
     const authHeader = req.headers?.authorization;
-    const queryToken = req.query?.token;
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
-      : queryToken;
+      : null;
 
     if (!token) {
-      throw new UnauthorizedException('Token requerido');
+      throw new UnauthorizedException('Token requerido en header Authorization');
     }
     try {
       const payload = this.jwtService.verify(token);
@@ -399,14 +403,29 @@ export class ChatbotController {
     return { state: status?.instance?.state || 'close' };
   }
 
+  @Get('public-info')
+  @AllowAnonymous()
+  @ApiOperation({ summary: 'Información pública del chatbot (WhatsApp)' })
+  @ApiOkWrapped()
+  async getPublicInfo() {
+    const status = await this.evolutionApiService.getInstanceStatus();
+    let phone = '';
+    if (status?.instance?.owner) {
+      phone = status.instance.owner.split('@')[0];
+    } else {
+      phone = '59100000000'; // Default fallback or from env
+    }
+    return ok({ whatsappNumber: phone });
+  }
+
   @Get('conversations')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Listar conversaciones de WhatsApp' })
   @ApiOkWrapped()
-  async getConversations() {
-    return ok(await this.conversationService.getConversations());
+  async getConversations(@Query() filters: FilterConversation) {
+    return ok(await this.conversationService.getConversations(filters));
   }
 
   @Get('conversations/:phone/messages')
@@ -415,8 +434,11 @@ export class ChatbotController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener mensajes de una conversación' })
   @ApiOkWrapped()
-  async getMessages(@Param('phone') phone: string) {
-    return ok(await this.conversationService.getMessages(phone));
+  async getMessages(
+    @Param('phone') phone: string,
+    @Query() filters: FilterConversationMessage,
+  ) {
+    return ok(await this.conversationService.getMessages(phone, filters));
   }
 
   @Post('conversations/:phone/read')
@@ -474,6 +496,28 @@ export class ChatbotController {
       this.conversationService.emit('qrcode_updated', {
         qrcode: result.qrcode,
       });
+    }
+    return ok(result);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Desconectar WhatsApp (logout) y generar nuevo QR (solo admin)',
+  })
+  @ApiOkWrapped()
+  async logout() {
+    const result = await this.evolutionApiService.logoutInstance();
+    if (result.success) {
+      this.conversationService.emit('connection_status', 'close');
+      if (result.qrcode) {
+        this.conversationService.emit('qrcode_updated', {
+          qrcode: result.qrcode,
+        });
+      }
     }
     return ok(result);
   }

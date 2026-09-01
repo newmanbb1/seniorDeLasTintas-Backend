@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -22,11 +23,13 @@ import {
   seedBranches,
   seedSupplies,
   seedEmployees,
-  seedInventory,
+  seedInventoryDefaults,
 } from './seed-data';
 
 @Injectable()
-export class SeedService {
+export class SeedService implements OnModuleInit {
+  private readonly logger = new Logger(SeedService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -44,21 +47,35 @@ export class SeedService {
     private readonly stockTransferRepository: Repository<StockTransfer>,
     @InjectRepository(Attendance)
     private readonly attendanceRepository: Repository<Attendance>,
+    private readonly configService: ConfigService,
   ) {}
 
-  // SEMILLA AUTOMÁTICA DESACTIVADA - Solo ejecutar manualmente via HTTP
-  // async onModuleInit() {
-  //   const hasData = await this.checkExistingData();
-  //   if (!hasData) {
-  //     console.log('📦 No hay datos. Ejecutando seed automáticamente...');
-  //     await this.seedAll();
-  //   }
-  // }
+  // Seed automático al arrancar: solo si la base está vacía (no hay admin).
+  // Se puede desactivar con SEED_ON_START=false.
+  async onModuleInit(): Promise<void> {
+    if (this.configService.get<string>('SEED_ON_START') === 'false') {
+      return;
+    }
 
-  // private async checkExistingData(): Promise<boolean> {
-  //   const userCount = await this.userRepository.count({ where: { deleted_at: IsNull() } });
-  //   return userCount > 0;
-  // }
+    try {
+      const existingAdmin = await this.userRepository.findOne({
+        where: { role: UserRole.ADMIN, deleted_at: IsNull() },
+      });
+
+      if (existingAdmin) {
+        this.logger.log('Datos existentes detectados, se omite el seed inicial');
+        return;
+      }
+
+      this.logger.log('Base de datos vacía. Ejecutando seed inicial...');
+      const result = await this.seedAll();
+      this.logger.log(
+        `Seed inicial completado: ${JSON.stringify(result.data)}`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Error en el seed inicial: ${error.message}`);
+    }
+  }
 
   async init(): Promise<{ message: string; data: any }> {
     const existingAdmin = await this.userRepository.findOne({
@@ -103,15 +120,9 @@ export class SeedService {
     const inventories = await this.seedInventory(adminId, branches, supplies);
     result.inventories = inventories.length;
 
-    const transfers = await this.seedStockTransfers(
-      adminId,
-      branches,
-      supplies,
-    );
-    result.transfers = transfers.length;
-
-    const attendances = await this.seedAttendances(adminId, employees);
-    result.attendances = attendances.length;
+    // Producción: no sembrar traspasos ni asistencias de demostración.
+    result.transfers = 0;
+    result.attendances = 0;
 
     return {
       message: 'Seed ejecutado correctamente',
@@ -335,7 +346,6 @@ export class SeedService {
     supplies: Supply[],
   ): Promise<Inventory[]> {
     const inventories: Inventory[] = [];
-    let inventoryIndex = 0;
 
     for (const branch of branches) {
       for (const supply of supplies) {
@@ -351,18 +361,16 @@ export class SeedService {
           continue;
         }
 
-        const invData = seedInventory[inventoryIndex % seedInventory.length];
         const inventory = this.inventoryRepository.create({
           branch,
           supply,
-          current_quantity: invData.current_quantity,
-          minimum_stock: invData.minimum_stock,
+          current_quantity: seedInventoryDefaults.current_quantity,
+          minimum_stock: seedInventoryDefaults.minimum_stock,
           created_by: adminId,
         });
 
         const saved = await this.inventoryRepository.save(inventory);
         inventories.push(saved);
-        inventoryIndex++;
       }
     }
 

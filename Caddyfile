@@ -1,0 +1,34 @@
+# Caddyfile for Production Reverse Proxy
+#
+# Con dominio (recomendado): descomenta el bloque de abajo y reemplaza tudominio.com
+# Caddy obtiene certificados SSL de Let's Encrypt automaticamente.
+#
+# tudominio.com {
+#     encode gzip zstd
+#
+#     handle /api/* {
+#         reverse_proxy backend:3000
+#     }
+#
+#     handle /* {
+#         reverse_proxy frontend:80
+#     }
+# }
+
+# Sin dominio (solo HTTP, pruebas en VPS antes de DNS):
+:80 {
+    # API Backend — usar handle (NO handle_path) para preservar el prefijo /api
+    handle /api/* {
+        reverse_proxy backend:3000
+    }
+
+    # Frontend SPA
+    handle /* {
+        reverse_proxy frontend:80
+    }
+
+    encode gzip zstd
+}
+
+# Evolution API NO se expone publicamente.
+# El backend se conecta internamente a evolution:8080 en la red Docker.

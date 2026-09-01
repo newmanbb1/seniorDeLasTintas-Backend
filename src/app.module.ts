@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { join } from 'path';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -52,6 +53,10 @@ import { OrderModule } from './modules/order/order.module';
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: configService.get<string>('DB_SYNC') === 'true',
+        migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],
+        migrationsTableName: 'migrations',
+        migrationsRun:
+          configService.get<string>('DB_MIGRATIONS_RUN') === 'true',
       }),
     }),
     AuthModule,
