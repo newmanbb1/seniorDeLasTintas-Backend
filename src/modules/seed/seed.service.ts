@@ -23,7 +23,7 @@ import {
   seedBranches,
   seedSupplies,
   seedEmployees,
-  seedInventory,
+  seedInventoryDefaults,
 } from './seed-data';
 
 @Injectable()
@@ -120,15 +120,9 @@ export class SeedService implements OnModuleInit {
     const inventories = await this.seedInventory(adminId, branches, supplies);
     result.inventories = inventories.length;
 
-    const transfers = await this.seedStockTransfers(
-      adminId,
-      branches,
-      supplies,
-    );
-    result.transfers = transfers.length;
-
-    const attendances = await this.seedAttendances(adminId, employees);
-    result.attendances = attendances.length;
+    // Producción: no sembrar traspasos ni asistencias de demostración.
+    result.transfers = 0;
+    result.attendances = 0;
 
     return {
       message: 'Seed ejecutado correctamente',
@@ -352,7 +346,6 @@ export class SeedService implements OnModuleInit {
     supplies: Supply[],
   ): Promise<Inventory[]> {
     const inventories: Inventory[] = [];
-    let inventoryIndex = 0;
 
     for (const branch of branches) {
       for (const supply of supplies) {
@@ -368,18 +361,16 @@ export class SeedService implements OnModuleInit {
           continue;
         }
 
-        const invData = seedInventory[inventoryIndex % seedInventory.length];
         const inventory = this.inventoryRepository.create({
           branch,
           supply,
-          current_quantity: invData.current_quantity,
-          minimum_stock: invData.minimum_stock,
+          current_quantity: seedInventoryDefaults.current_quantity,
+          minimum_stock: seedInventoryDefaults.minimum_stock,
           created_by: adminId,
         });
 
         const saved = await this.inventoryRepository.save(inventory);
         inventories.push(saved);
-        inventoryIndex++;
       }
     }
 
