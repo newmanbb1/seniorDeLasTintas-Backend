@@ -10,7 +10,6 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { AllowAnonymous } from '../../common/guards/allow-anon.decorator';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -59,11 +58,10 @@ export class SupplyController {
 
   @Get('public')
   @AllowAnonymous()
-  @ApiOperation({ summary: 'Listar insumos activos (catálogo público)' })
+  @ApiOperation({ summary: 'List public catalog (active supplies only, paginated)' })
   @ApiOkWrapped()
-  async findAllPublic(@Query() filters: FilterSupply) {
-    const { limit = 100, offset = 0 } = filters;
-    return ok(await this.supplyService.findAllPublic(limit, offset));
+  async findAllPublic(@Query() filters: FilterPublicSupply) {
+    return ok(await this.supplyService.findAllPublicPaginated(filters));
   }
 
   @Get()
@@ -72,14 +70,6 @@ export class SupplyController {
   @ApiOkWrapped()
   async findAll(@Query() filters: FilterSupply) {
     return ok(await this.supplyService.findAll(filters));
-  }
-
-  @Get('public')
-  @AllowAnonymous()
-  @ApiOperation({ summary: 'List public catalog (active supplies only, paginated)' })
-  @ApiOkWrapped()
-  async findAllPublic(@Query() filters: FilterPublicSupply) {
-    return ok(await this.supplyService.findAllPublicPaginated(filters));
   }
 
   @Get('public/:id')

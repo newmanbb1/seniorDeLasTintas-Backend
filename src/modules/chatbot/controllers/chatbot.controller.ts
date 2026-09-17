@@ -39,7 +39,6 @@ import { WebhookAuthGuard } from 'src/common/guards/webhook-auth.guard';
 import { AllowAnonymous } from 'src/common/guards/allow-anon.decorator';
 import { Roles } from 'src/common/decorators';
 import { UserRole } from 'src/modules/auth/entities/user.entity';
-import { AllowAnonymous } from 'src/common/guards/allow-anon.decorator';
 
 @ApiTags('chatbot')
 @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -401,21 +400,6 @@ export class ChatbotController {
   async getStatus() {
     const status = await this.evolutionApiService.getInstanceStatus();
     return { state: status?.instance?.state || 'close' };
-  }
-
-  @Get('public-info')
-  @AllowAnonymous()
-  @ApiOperation({ summary: 'Información pública del chatbot (WhatsApp)' })
-  @ApiOkWrapped()
-  async getPublicInfo() {
-    const status = await this.evolutionApiService.getInstanceStatus();
-    let phone = '';
-    if (status?.instance?.owner) {
-      phone = status.instance.owner.split('@')[0];
-    } else {
-      phone = '59100000000'; // Default fallback or from env
-    }
-    return ok({ whatsappNumber: phone });
   }
 
   @Get('conversations')

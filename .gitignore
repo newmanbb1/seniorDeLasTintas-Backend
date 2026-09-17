@@ -43,6 +43,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# Deploy local (credenciales VPS)
+deploy/deploy.env
+
 # temp directory
 .temp
 .tmp
