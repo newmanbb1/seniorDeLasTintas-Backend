@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Like, Repository } from 'typeorm';
+import { IsNull, Like, ILike, Repository } from 'typeorm';
 import { Supply } from './entities/supply.entity';
 import { Inventory } from '../inventory/entities/inventory.entity';
 import { StockTransfer } from '../stock-transfer/entities/stock-transfer.entity';
@@ -69,16 +69,25 @@ export class SupplyService {
     data: Supply[];
     meta: { total: number; limit: number; offset: number };
   }> {
-    const { limit = 10, offset = 0, name, category } = filters;
+    const { limit = 10, offset = 0, name, category, search } = filters;
 
-    const where: any = { deleted_at: IsNull() };
+    const baseWhere = { deleted_at: IsNull() };
+    let where: any = { ...baseWhere };
 
     const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
-    if (name) {
-      where.name = Like(`%${sanitizeLike(name)}%`);
-    }
-    if (category) {
-      where.category = Like(`%${sanitizeLike(category)}%`);
+
+    if (search) {
+      where = [
+        { ...baseWhere, name: ILike(`%${sanitizeLike(search)}%`) },
+        { ...baseWhere, code: ILike(`%${sanitizeLike(search)}%`) },
+      ];
+    } else {
+      if (name) {
+        where.name = ILike(`%${sanitizeLike(name)}%`);
+      }
+      if (category) {
+        where.category = ILike(`%${sanitizeLike(category)}%`);
+      }
     }
 
     const [data, total] = await this.supplyRepository.findAndCount({

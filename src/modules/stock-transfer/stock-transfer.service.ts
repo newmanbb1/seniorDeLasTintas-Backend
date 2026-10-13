@@ -230,66 +230,95 @@ export class StockTransferService {
   }
 
   async receive(id: string, userId: string): Promise<StockTransfer> {
-    const stockTransfer = await this.findOne(id);
-
-    if (stockTransfer.status !== StockTransferStatus.InTransit) {
-      throw new BadRequestException(
-        `El traspaso no puede ser recibido. Estado actual: "${stockTransfer.status}".`,
-      );
-    }
-
-    const destinationInventory = await this.inventoryRepository.findOne({
-      where: {
-        branch: { id: stockTransfer.destination_branch.id },
-        supply: { id: stockTransfer.supply.id },
-      },
-    });
-
-    if (destinationInventory) {
-      destinationInventory.current_quantity += stockTransfer.quantity;
-      destinationInventory.updated_by = userId;
-      await this.inventoryRepository.save(destinationInventory);
-    } else {
-      const newInventory = this.inventoryRepository.create({
-        branch: stockTransfer.destination_branch,
-        supply: stockTransfer.supply,
-        current_quantity: stockTransfer.quantity,
-        minimum_stock: 0,
-        created_by: userId,
+    return this.stockTransferRepository.manager.transaction(async (manager) => {
+      const stockTransfer = await manager.findOne(StockTransfer, {
+        where: { id, deleted_at: IsNull() },
+        relations: ['origin_branch', 'destination_branch', 'supply'],
+        lock: { mode: 'pessimistic_write' },
       });
-      await this.inventoryRepository.save(newInventory);
-    }
 
-    const originInventory = await this.inventoryRepository.findOne({
-      where: {
-        branch: { id: stockTransfer.origin_branch.id },
-        supply: { id: stockTransfer.supply.id },
-      },
-    });
-    if (originInventory) {
+      if (!stockTransfer) {
+        throw new NotFoundException(`Traspaso con ID "${id}" no encontrado`);
+      }
+
+      if (stockTransfer.status !== StockTransferStatus.InTransit) {
+        throw new BadRequestException(
+          `El traspaso no puede ser recibido. Estado actual: "${stockTransfer.status}".`,
+        );
+      }
+
+      const originInventory = await manager.findOne(Inventory, {
+        where: {
+          branch: { id: stockTransfer.origin_branch.id },
+          supply: { id: stockTransfer.supply.id },
+          deleted_at: IsNull(),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!originInventory || originInventory.current_quantity < stockTransfer.quantity) {
+        throw new BadRequestException(
+          `Stock insuficiente en sucursal de origen para completar la recepción. Disponible: ${originInventory?.current_quantity ?? 0}, solicitado: ${stockTransfer.quantity}.`,
+        );
+      }
+
       originInventory.current_quantity -= stockTransfer.quantity;
       originInventory.updated_by = userId;
-      await this.inventoryRepository.save(originInventory);
-    }
+      await manager.save(originInventory);
 
-    stockTransfer.status = StockTransferStatus.Received;
-    stockTransfer.reception_date = new Date();
-    stockTransfer.updated_by = userId;
-    return this.stockTransferRepository.save(stockTransfer);
+      const destinationInventory = await manager.findOne(Inventory, {
+        where: {
+          branch: { id: stockTransfer.destination_branch.id },
+          supply: { id: stockTransfer.supply.id },
+          deleted_at: IsNull(),
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (destinationInventory) {
+        destinationInventory.current_quantity += stockTransfer.quantity;
+        destinationInventory.updated_by = userId;
+        await manager.save(destinationInventory);
+      } else {
+        const newInventory = manager.create(Inventory, {
+          branch: stockTransfer.destination_branch,
+          supply: stockTransfer.supply,
+          current_quantity: stockTransfer.quantity,
+          minimum_stock: 0,
+          created_by: userId,
+          updated_by: userId,
+        });
+        await manager.save(newInventory);
+      }
+
+      stockTransfer.status = StockTransferStatus.Received;
+      stockTransfer.reception_date = new Date();
+      stockTransfer.updated_by = userId;
+      return manager.save(stockTransfer);
+    });
   }
 
   async reject(id: string, userId: string): Promise<StockTransfer> {
-    const stockTransfer = await this.findOne(id);
+    return this.stockTransferRepository.manager.transaction(async (manager) => {
+      const stockTransfer = await manager.findOne(StockTransfer, {
+        where: { id, deleted_at: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (stockTransfer.status !== StockTransferStatus.InTransit) {
-      throw new BadRequestException(
-        `El traspaso no puede ser rechazado. Estado actual: "${stockTransfer.status}".`,
-      );
-    }
+      if (!stockTransfer) {
+        throw new NotFoundException(`Traspaso con ID "${id}" no encontrado`);
+      }
 
-    stockTransfer.status = StockTransferStatus.Rejected;
-    stockTransfer.updated_by = userId;
-    return this.stockTransferRepository.save(stockTransfer);
+      if (stockTransfer.status !== StockTransferStatus.InTransit) {
+        throw new BadRequestException(
+          `El traspaso no puede ser rechazado. Estado actual: "${stockTransfer.status}".`,
+        );
+      }
+
+      stockTransfer.status = StockTransferStatus.Rejected;
+      stockTransfer.updated_by = userId;
+      return manager.save(stockTransfer);
+    });
   }
 
   async remove(

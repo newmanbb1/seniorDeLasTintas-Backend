@@ -34,6 +34,11 @@ describe('StockTransferService', () => {
   let branchRepository: ReturnType<typeof createMockRepository>;
   let supplyRepository: ReturnType<typeof createMockRepository>;
   let inventoryRepository: ReturnType<typeof createMockInventoryRepository>;
+  let mockManager: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+    create: jest.Mock;
+  };
 
   const mockOriginBranch = {
     id: 'branch-1',
@@ -127,6 +132,15 @@ describe('StockTransferService', () => {
     supplyRepository = createMockRepository();
     inventoryRepository = createMockInventoryRepository();
 
+    mockManager = {
+      findOne: jest.fn(),
+      save: jest.fn(),
+      create: jest.fn(),
+    };
+    (stockTransferRepository as any).manager = {
+      transaction: jest.fn((cb) => cb(mockManager)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StockTransferService,
@@ -216,17 +230,13 @@ describe('StockTransferService', () => {
 
   describe('receive', () => {
     it('debe recibir transferencia exitosamente', async () => {
-      stockTransferRepository.findOne = jest
-        .fn()
-        .mockImplementation(() => Promise.resolve({ ...mockTransfer }));
-      inventoryRepository.findOne
+      mockManager.findOne
+        .mockResolvedValueOnce(mockTransfer)
         .mockResolvedValueOnce(mockInventory)
         .mockResolvedValueOnce(mockInventory);
-      inventoryRepository.save.mockResolvedValue({} as any);
-      stockTransferRepository.save.mockResolvedValue({
-        ...mockTransfer,
-        status: StockTransferStatus.Received,
-      });
+      mockManager.save.mockImplementation((entity: any) =>
+        Promise.resolve(entity),
+      );
 
       const result = await service.receive('transfer-1', 'user-1');
 
@@ -234,12 +244,10 @@ describe('StockTransferService', () => {
     });
 
     it('debe lanzar error si no está en tránsito', async () => {
-      stockTransferRepository.findOne = jest.fn().mockImplementation(() =>
-        Promise.resolve({
-          ...mockTransfer,
-          status: StockTransferStatus.Received,
-        }),
-      );
+      mockManager.findOne.mockResolvedValueOnce({
+        ...mockTransfer,
+        status: StockTransferStatus.Received,
+      });
 
       await expect(service.receive('transfer-1', 'user-1')).rejects.toThrow(
         BadRequestException,
@@ -249,13 +257,10 @@ describe('StockTransferService', () => {
 
   describe('reject', () => {
     it('debe rechazar transferencia exitosamente', async () => {
-      stockTransferRepository.findOne = jest
-        .fn()
-        .mockImplementation(() => Promise.resolve({ ...mockTransfer }));
-      stockTransferRepository.save.mockResolvedValue({
-        ...mockTransfer,
-        status: StockTransferStatus.Rejected,
-      });
+      mockManager.findOne.mockResolvedValueOnce(mockTransfer);
+      mockManager.save.mockImplementation((entity: any) =>
+        Promise.resolve(entity),
+      );
 
       const result = await service.reject('transfer-1', 'user-1');
 
@@ -263,12 +268,10 @@ describe('StockTransferService', () => {
     });
 
     it('debe lanzar error si no está en tránsito', async () => {
-      stockTransferRepository.findOne = jest.fn().mockImplementation(() =>
-        Promise.resolve({
-          ...mockTransfer,
-          status: StockTransferStatus.Rejected,
-        }),
-      );
+      mockManager.findOne.mockResolvedValueOnce({
+        ...mockTransfer,
+        status: StockTransferStatus.Rejected,
+      });
 
       await expect(service.reject('transfer-1', 'user-1')).rejects.toThrow(
         BadRequestException,

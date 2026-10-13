@@ -12,4 +12,9 @@ export class FilterSupply extends PaginationDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({ description: 'Search term for name or code' })
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

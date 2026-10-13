@@ -213,6 +213,7 @@ export class OrderService {
               branch: { id: branchId },
               supply: { id: detail.supply.id },
             },
+            lock: { mode: 'pessimistic_write' },
           });
 
           if (!inventory || inventory.current_quantity < detail.quantity) {

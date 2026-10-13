@@ -12,6 +12,7 @@ jest.mock('bcrypt', () => ({
 import { User, UserRole } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { Employee } from '../employee/entities/employee.entity';
+import { EmployeePinService } from '../../common/services/employee-pin.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -32,8 +33,9 @@ describe('AuthService', () => {
   let userRepository: ReturnType<typeof createMockRepository>;
   let refreshTokenRepository: ReturnType<typeof createMockRepository>;
   let employeeRepository: ReturnType<typeof createMockRepository>;
-  let jwtService: jest.Mocked<Partial<JwtService>>;
-  let configService: jest.Mocked<Partial<ConfigService>>;
+  let employeePinService: { loginWithPin: jest.Mock };
+  let jwtService: { sign: jest.Mock; verify: jest.Mock };
+  let configService: { get: jest.Mock };
 
   const mockUser = {
     id: 'user-1',
@@ -73,6 +75,10 @@ describe('AuthService', () => {
     refreshTokenRepository = createMockRepository();
     employeeRepository = createMockRepository();
 
+    employeePinService = {
+      loginWithPin: jest.fn(),
+    };
+
     jwtService = {
       sign: jest.fn(),
       verify: jest.fn(),
@@ -98,7 +104,7 @@ describe('AuthService', () => {
           provide: getRepositoryToken(RefreshToken),
           useValue: refreshTokenRepository,
         },
-        { provide: getRepositoryToken(Employee), useValue: employeeRepository },
+        { provide: EmployeePinService, useValue: employeePinService },
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: configService },
       ],
@@ -176,7 +182,7 @@ describe('AuthService', () => {
 
   describe('loginPin', () => {
     it('debe loguear empleado con PIN correcto', async () => {
-      employeeRepository.findOne.mockResolvedValue(mockEmployee);
+      employeePinService.loginWithPin.mockResolvedValue(mockEmployee);
       jwtService.sign.mockReturnValue('employee-access-token');
 
       const result = await service.loginPin({ pin: '1234' });
@@ -186,7 +192,9 @@ describe('AuthService', () => {
     });
 
     it('debe lanzar error con PIN incorrecto', async () => {
-      employeeRepository.findOne.mockResolvedValue(null);
+      employeePinService.loginWithPin.mockRejectedValue(
+        new UnauthorizedException('PIN inválido o empleado inactivo'),
+      );
 
       await expect(service.loginPin({ pin: '0000' })).rejects.toThrow(
         UnauthorizedException,

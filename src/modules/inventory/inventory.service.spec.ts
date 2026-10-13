@@ -29,6 +29,10 @@ describe('InventoryService', () => {
   let branchRepository: ReturnType<typeof createMockRepository>;
   let supplyRepository: ReturnType<typeof createMockRepository>;
   let stockTransferRepository: ReturnType<typeof createMockRepository>;
+  let mockManager: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
 
   const mockBranch = {
     id: 'branch-1',
@@ -88,6 +92,14 @@ describe('InventoryService', () => {
           createQueryRunner: jest.fn(),
         },
       } as any,
+    };
+
+    mockManager = {
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
+    (inventoryRepository as any).manager = {
+      transaction: jest.fn((cb) => cb(mockManager)),
     };
 
     branchRepository = createMockRepository();
@@ -238,8 +250,8 @@ describe('InventoryService', () => {
 
   describe('adjustQuantity', () => {
     it('debe ajustar cantidad positivamente', async () => {
-      inventoryRepository.findOne.mockResolvedValue(mockInventory);
-      inventoryRepository.save.mockResolvedValue({
+      mockManager.findOne.mockResolvedValue(mockInventory);
+      mockManager.save.mockResolvedValue({
         ...mockInventory,
         current_quantity: 60,
       });
@@ -250,8 +262,8 @@ describe('InventoryService', () => {
     });
 
     it('debe ajustar cantidad negativamente', async () => {
-      inventoryRepository.findOne.mockResolvedValue(mockInventory);
-      inventoryRepository.save.mockResolvedValue({
+      mockManager.findOne.mockResolvedValue(mockInventory);
+      mockManager.save.mockResolvedValue({
         ...mockInventory,
         current_quantity: 40,
       });
@@ -262,7 +274,7 @@ describe('InventoryService', () => {
     });
 
     it('debe lanzar error si resultado es negativo', async () => {
-      inventoryRepository.findOne.mockResolvedValue(mockInventory);
+      mockManager.findOne.mockResolvedValue(mockInventory);
 
       await expect(
         service.adjustQuantity('inv-1', -100, 'user-1'),

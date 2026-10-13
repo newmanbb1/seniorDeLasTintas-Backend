@@ -74,6 +74,8 @@ describe('SupplyService', () => {
           category: 'Insumo',
           unit_of_measure: 'Litro',
           code: 'TNT-001',
+          sale_price: 50,
+          brand: 'Epson',
         },
         'user-1',
       );
@@ -91,6 +93,8 @@ describe('SupplyService', () => {
             category: 'Insumo',
             unit_of_measure: 'Litro',
             code: 'TNT-001',
+            sale_price: 50,
+            brand: 'Epson',
           },
           'user-1',
         ),

@@ -64,6 +64,13 @@ export class SeedController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Limpiar datos y ejecutar seed (solo admin)' })
   async resetAndSeed() {
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const allowReset = this.configService.get<string>('ALLOW_DB_RESET') === 'true';
+    if (isProduction && !allowReset) {
+      throw new ForbiddenException(
+        'El reinicio destructivo de la base de datos está prohibido en producción (establezca ALLOW_DB_RESET=true si es deliberado).',
+      );
+    }
     const result = await this.seedService.resetAndSeed();
     return {
       success: true,

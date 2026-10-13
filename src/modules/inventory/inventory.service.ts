@@ -284,27 +284,39 @@ export class InventoryService {
     userId: string,
     userContext?: UserContext,
   ): Promise<Inventory> {
-    const inventory = await this.findOne(id, userContext);
+    return this.inventoryRepository.manager.transaction(async (manager) => {
+      const inventory = await manager.findOne(Inventory, {
+        where: { id, deleted_at: IsNull() },
+        relations: ['branch', 'supply'],
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (userContext && this.isSecretaria(userContext.role)) {
-      if (inventory.branch.id !== userContext.branch_id) {
-        throw new ForbiddenException(
-          'Solo puedes ajustar inventario de tu sucursal',
+      if (!inventory) {
+        throw new NotFoundException(
+          `Registro de inventario con ID "${id}" no encontrado`,
         );
       }
-    }
 
-    const newQuantity = inventory.current_quantity + adjustment;
+      if (userContext && this.isSecretaria(userContext.role)) {
+        if (inventory.branch?.id !== userContext.branch_id) {
+          throw new ForbiddenException(
+            'Solo puedes ajustar inventario de tu sucursal',
+          );
+        }
+      }
 
-    if (newQuantity < 0) {
-      throw new BadRequestException(
-        `La cantidad no puede ser negativa. Cantidad actual: ${inventory.current_quantity}, ajuste: ${adjustment}`,
-      );
-    }
+      const newQuantity = inventory.current_quantity + adjustment;
 
-    inventory.current_quantity = newQuantity;
-    inventory.updated_by = userId;
-    return this.inventoryRepository.save(inventory);
+      if (newQuantity < 0) {
+        throw new BadRequestException(
+          `La cantidad no puede ser negativa. Cantidad actual: ${inventory.current_quantity}, ajuste: ${adjustment}`,
+        );
+      }
+
+      inventory.current_quantity = newQuantity;
+      inventory.updated_by = userId;
+      return manager.save(inventory);
+    });
   }
 
   async transfer(

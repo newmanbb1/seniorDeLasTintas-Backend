@@ -38,7 +38,7 @@ export class EmployeePinService {
     const isAllowed = ranges.some((cidr) => {
       try {
         const range = ipaddr.parseCIDR(cidr);
-        return addr.match(range);
+        return (addr as any).match(range);
       } catch {
         return false;
       }
@@ -99,7 +99,6 @@ export class EmployeePinService {
     });
 
     let matchedEmployee: Employee | null = null;
-    const failedIds: string[] = [];
 
     for (const emp of employees) {
       if (emp.locked_until && emp.locked_until > now) {
@@ -110,16 +109,9 @@ export class EmployeePinService {
         matchedEmployee = emp;
         break;
       }
-      failedIds.push(emp.id);
     }
 
     if (!matchedEmployee) {
-      for (const empId of failedIds) {
-        const emp = employees.find((e) => e.id === empId);
-        if (emp) {
-          await this.recordFailedAttempt(emp);
-        }
-      }
       throw new UnauthorizedException('PIN inválido o empleado inactivo');
     }
 

@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -39,7 +40,8 @@ export class CreateEmployeeDto {
   @IsUUID()
   branch_id: string;
 
-  @ApiProperty({ example: true, default: true })
+  @ApiProperty({ example: true, default: true, required: false })
+  @IsOptional()
   @IsBoolean()
-  active: boolean = true;
+  active?: boolean = true;
 }

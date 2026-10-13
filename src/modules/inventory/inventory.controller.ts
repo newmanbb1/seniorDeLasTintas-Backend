@@ -29,6 +29,7 @@ import { CreateInventoryDto } from './dto/create-inventory.dto';
 import { UpdateInventoryDto } from './dto/update-inventory.dto';
 import { FilterInventory } from './dto/filter-inventory.dto';
 import { TransferDto } from './dto/transfer.dto';
+import { AdjustInventoryDto } from './dto/adjust-inventory.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles, GetUser } from '../../common/decorators';
@@ -147,18 +148,18 @@ export class InventoryController {
   @Patch(':id/adjust')
   @Roles(UserRole.ADMIN, UserRole.SECRETARIA)
   @ApiOperation({ summary: 'Adjust inventory quantity' })
-  @ApiBody({ schema: { type: 'object', properties: { adjustment: { type: 'number', example: -5 } } } })
+  @ApiBody({ type: AdjustInventoryDto })
   @ApiOkWrapped()
   async adjustQuantity(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('adjustment') adjustment: number,
+    @Body() dto: AdjustInventoryDto,
     @GetUser() user: any,
   ) {
     const userContext = getUserContext(user);
     return ok(
       await this.inventoryService.adjustQuantity(
         id,
-        adjustment,
+        dto.adjustment,
         user?.id,
         userContext,
       ),

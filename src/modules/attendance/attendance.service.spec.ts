@@ -8,6 +8,7 @@ import {
 } from './entities/attendance.entity';
 import { Employee } from '../employee/entities/employee.entity';
 import { Branch } from '../branch/entities/branch.entity';
+import { EmployeePinService } from '../../common/services/employee-pin.service';
 import {
   NotFoundException,
   BadRequestException,
@@ -29,6 +30,10 @@ describe('AttendanceService', () => {
   let attendanceRepository: ReturnType<typeof createMockRepository>;
   let employeeRepository: ReturnType<typeof createMockRepository>;
   let branchRepository: Record<string, never>;
+  let employeePinService: {
+    verifyPinForEmployee: jest.Mock;
+    validateIpAccess: jest.Mock;
+  };
   let configService: jest.Mocked<Partial<ConfigService>>;
 
   const mockDate = new Date('2025-01-15T08:30:00Z');
@@ -70,6 +75,11 @@ describe('AttendanceService', () => {
     employeeRepository = createMockRepository();
     branchRepository = {};
 
+    employeePinService = {
+      verifyPinForEmployee: jest.fn().mockResolvedValue(mockEmployee),
+      validateIpAccess: jest.fn(),
+    };
+
     configService = {
       get: jest.fn((key: string) => {
         const config: Record<string, any> = {
@@ -89,6 +99,7 @@ describe('AttendanceService', () => {
         { provide: getRepositoryToken(Employee), useValue: employeeRepository },
         { provide: getRepositoryToken(Branch), useValue: branchRepository },
         { provide: ConfigService, useValue: configService },
+        { provide: EmployeePinService, useValue: employeePinService },
       ],
     }).compile();
 
@@ -97,7 +108,7 @@ describe('AttendanceService', () => {
 
   describe('checkIn', () => {
     it('debe registrar entrada exitosamente', async () => {
-      employeeRepository.findOne.mockResolvedValue(mockEmployee);
+      employeePinService.verifyPinForEmployee.mockResolvedValue(mockEmployee);
       attendanceRepository.findOne.mockResolvedValue(null);
       attendanceRepository.create.mockReturnValue(mockAttendance);
       attendanceRepository.save.mockResolvedValue(mockAttendance);
@@ -112,7 +123,9 @@ describe('AttendanceService', () => {
     });
 
     it('debe lanzar error si el empleado no existe', async () => {
-      employeeRepository.findOne.mockResolvedValue(null);
+      employeePinService.verifyPinForEmployee.mockRejectedValue(
+        new NotFoundException('Empleado no encontrado'),
+      );
 
       await expect(
         service.checkIn({ employee_id: 'invalid', pin: '1234' }),
@@ -120,10 +133,9 @@ describe('AttendanceService', () => {
     });
 
     it('debe lanzar error si el empleado está inactivo', async () => {
-      employeeRepository.findOne.mockResolvedValue({
-        ...mockEmployee,
-        active: false,
-      });
+      employeePinService.verifyPinForEmployee.mockRejectedValue(
+        new ForbiddenException('Empleado inactivo'),
+      );
 
       await expect(
         service.checkIn({ employee_id: 'emp-1', pin: '1234' }),
@@ -131,7 +143,9 @@ describe('AttendanceService', () => {
     });
 
     it('debe lanzar error si el PIN es incorrecto', async () => {
-      employeeRepository.findOne.mockResolvedValue(mockEmployee);
+      employeePinService.verifyPinForEmployee.mockRejectedValue(
+        new BadRequestException('PIN incorrecto'),
+      );
 
       await expect(
         service.checkIn({ employee_id: 'emp-1', pin: '0000' }),

@@ -83,7 +83,18 @@ export class BranchService {
     });
   }
 
-  async findOne(id: string, _userContext?: UserContext): Promise<Branch> {
+  async findOne(id: string, userContext?: UserContext): Promise<Branch> {
+    if (
+      userContext &&
+      userContext.role !== UserRole.ADMIN &&
+      userContext.branch_id &&
+      userContext.branch_id !== id
+    ) {
+      throw new ForbiddenException(
+        'No tiene permisos para acceder a esta sucursal',
+      );
+    }
+
     const branch = await this.branchRepository.findOne({
       where: { id, deleted_at: IsNull() },
     });
