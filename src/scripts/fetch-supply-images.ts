@@ -3,7 +3,7 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { config } from 'dotenv';
 
-// Cargar variables de entorno de .env si existe
+// Cargar variables de entorno si existe .env
 config();
 
 interface CliOptions {
@@ -17,8 +17,8 @@ interface CliOptions {
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
   const options: CliOptions = {
-    limit: 0, // 0 = sin límite (todos)
-    delay: 1500, // 1.5s entre búsquedas para evitar rate-limiting
+    limit: 0, // 0 = sin límite (todos los pendientes)
+    delay: 1000, // 1s entre búsquedas
     dryRun: false,
   };
 
@@ -28,7 +28,7 @@ function parseArgs(): CliOptions {
     } else if (arg.startsWith('--limit=')) {
       options.limit = parseInt(arg.split('=')[1], 10) || 0;
     } else if (arg.startsWith('--delay=')) {
-      options.delay = parseInt(arg.split('=')[1], 10) || 1500;
+      options.delay = parseInt(arg.split('=')[1], 10) || 1000;
     } else if (arg.startsWith('--code=')) {
       options.code = arg.split('=')[1];
     } else if (arg.startsWith('--category=')) {
@@ -40,7 +40,7 @@ Uso: node dist/scripts/fetch-supply-images.js [opciones]
 Opciones:
   --limit=N       Limita la cantidad de productos a procesar (ej: --limit=10). 0 = todos.
   --dry-run       Modo prueba: busca imágenes pero NO descarga ni modifica la BD.
-  --delay=MS      Milisegundos de pausa entre búsquedas (por defecto: 1500).
+  --delay=MS      Milisegundos de pausa entre búsquedas (por defecto: 1000).
   --code=CODE     Procesa solo un producto específico por su código (ej: --code=ST-0005).
   --category=CAT  Procesa solo productos de una categoría específica.
   --help          Muestra esta ayuda.
@@ -69,66 +69,108 @@ function resolveUploadsDir(): string {
   return localPath;
 }
 
-async function getDuckDuckGoVqd(query: string): Promise<string | null> {
-  const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}&t=h_&iar=images&iax=images&ia=images`;
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+async function searchBing(query: string): Promise<string[]> {
   try {
+    const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&first=1&scenario=ImageBasicHover`;
     const res = await fetch(url, {
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': BROWSER_UA,
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(9000),
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const murls = [
+      ...html.matchAll(/(?:&quot;|")murl(?:&quot;|")\s*:\s*(?:&quot;|")([^"&]+)/g),
+    ].map((m) => m[1]);
+    const turls = [
+      ...html.matchAll(/(?:&quot;|")turl(?:&quot;|")\s*:\s*(?:&quot;|")([^"&]+)/g),
+    ].map((m) => m[1]);
+
+    const candidates: string[] = [];
+    const max = Math.max(murls.length, turls.length);
+    for (let i = 0; i < Math.min(max, 6); i++) {
+      if (murls[i]) candidates.push(murls[i]);
+      if (turls[i]) candidates.push(turls[i]);
+    }
+    return candidates;
+  } catch {
+    return [];
+  }
+}
+
+async function searchDuckDuckGo(query: string): Promise<string[]> {
+  try {
+    const url = `https://duckduckgo.com/?q=${encodeURIComponent(query)}&t=h_&iar=images&iax=images&ia=images`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': BROWSER_UA,
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+      },
+      signal: AbortSignal.timeout(9000),
     });
     const text = await res.text();
     const match =
       text.match(/vqd=([0-9-]+)/) || text.match(/vqd=["']([0-9-]+)["']/);
-    return match ? match[1] : null;
-  } catch (err: any) {
-    return null;
-  }
-}
+    if (!match) return [];
 
-async function searchImages(query: string): Promise<string[]> {
-  const vqd = await getDuckDuckGoVqd(query);
-  if (!vqd) return [];
-
-  const apiUrl = `https://duckduckgo.com/i.js?l=wt-wt&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,&p=1`;
-  try {
-    const res = await fetch(apiUrl, {
+    const vqd = match[1];
+    const apiUrl = `https://duckduckgo.com/i.js?l=wt-wt&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,&p=1`;
+    const imgRes = await fetch(apiUrl, {
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': BROWSER_UA,
         Referer: 'https://duckduckgo.com/',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(9000),
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      results?: Array<{ image: string; thumbnail: string; title: string }>;
+    if (!imgRes.ok) return [];
+    const data = (await imgRes.json()) as {
+      results?: Array<{ image: string; thumbnail: string }>;
     };
     if (!data.results || !Array.isArray(data.results)) return [];
-    return data.results.map((r) => r.image).filter(Boolean);
+    return data.results.map((r) => r.image || r.thumbnail).filter(Boolean);
   } catch {
     return [];
   }
+}
+
+async function findCandidatesForQuery(query: string): Promise<{ candidates: string[]; engine: string }> {
+  // 1. Motor principal: Bing (robusto, no bloquea IPs de centros de datos, CDN Microsoft ultra rápido)
+  const bingResults = await searchBing(query);
+  if (bingResults.length > 0) {
+    return { candidates: bingResults, engine: 'Bing' };
+  }
+
+  // 2. Fallback: DuckDuckGo
+  const ddgResults = await searchDuckDuckGo(query);
+  if (ddgResults.length > 0) {
+    return { candidates: ddgResults, engine: 'DuckDuckGo' };
+  }
+
+  return { candidates: [], engine: 'None' };
 }
 
 async function downloadValidImage(
   candidateUrls: string[],
   destDir: string,
   baseFilename: string,
-): Promise<string | null> {
-  // Probar hasta las primeras 5 URLs candidatas
-  for (const url of candidateUrls.slice(0, 5)) {
+): Promise<{ filename: string; size: number } | null> {
+  for (const url of candidateUrls.slice(0, 8)) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch(url, {
         headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': BROWSER_UA,
           Accept:
             'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         },
@@ -144,8 +186,8 @@ async function downloadValidImage(
       const arrayBuffer = await res.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      // Descartar imágenes demasiado pequeñas (< 3 KB suele ser icono/pixel) o gigantes (> 6 MB)
-      if (buffer.length < 3000 || buffer.length > 6 * 1024 * 1024) continue;
+      // Descartar imágenes demasiado pequeñas (< 3 KB suele ser icono) o gigantes (> 8 MB)
+      if (buffer.length < 3000 || buffer.length > 8 * 1024 * 1024) continue;
 
       let ext = 'jpg';
       if (contentType.includes('png')) ext = 'png';
@@ -155,7 +197,7 @@ async function downloadValidImage(
       const filename = `${baseFilename}.${ext}`;
       const fullPath = path.join(destDir, filename);
       fs.writeFileSync(fullPath, buffer);
-      return filename;
+      return { filename, size: buffer.length };
     } catch {
       continue;
     }
@@ -170,11 +212,18 @@ function cleanQuery(name: string, brand?: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Si no contiene la marca, agregarla para mejorar la precisión de búsqueda
   if (brand && brand !== 'Genérico' && !q.toLowerCase().includes(brand.toLowerCase())) {
     q = `${q} ${brand}`;
   }
   return q;
+}
+
+function simplifyQuery(name: string): string {
+  // Quita palabras genéricas para una segunda búsqueda si la primera no devuelve resultados
+  return name
+    .replace(/\b(original|compatible|nuevo|remplazo|pack|juego|unidad|para|de|del|en)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function sleep(ms: number) {
@@ -185,10 +234,10 @@ async function main() {
   const options = parseArgs();
   console.log('====================================================');
   console.log('🔎 SCRIPT DE ASIGNACIÓN AUTOMÁTICA DE IMÁGENES');
-  console.log('   (Solo actualiza el campo images de productos sin foto)');
+  console.log('   (Motor dual: Bing Images + DuckDuckGo con CDN)');
   console.log('====================================================');
   console.log(`Modo Dry-Run (sin escribir): ${options.dryRun ? 'SÍ (simulación)' : 'NO (escribirá cambios)'}`);
-  console.log(`Límite de productos: ${options.limit > 0 ? options.limit : 'Sin límite (todos)'}`);
+  console.log(`Límite de productos: ${options.limit > 0 ? options.limit : 'Sin límite (todos los pendientes)'}`);
   console.log(`Delay entre peticiones: ${options.delay}ms`);
   if (options.code) console.log(`Filtro por código: ${options.code}`);
   if (options.category) console.log(`Filtro por categoría: ${options.category}`);
@@ -206,7 +255,7 @@ async function main() {
   console.log(`Directorio de destino de imágenes: ${uploadsDir}\n`);
 
   try {
-    // 1. Consultar únicamente productos que NO tengan imágenes
+    // 1. Consultar ÚNICAMENTE productos que NO tengan imágenes (images es NULL o array vacío)
     let query = `
       SELECT id, code, name, brand, category, images
       FROM supply
@@ -249,21 +298,31 @@ async function main() {
       const supply = supplies[i];
       const indexStr = `[${i + 1}/${supplies.length}]`;
       const codeStr = supply.code || supply.id.slice(0, 8);
-      const searchQuery = cleanQuery(supply.name, supply.brand);
+      let searchQuery = cleanQuery(supply.name, supply.brand);
 
-      process.stdout.write(`${indexStr} ${codeStr}: "${supply.name}" -> Buscando: "${searchQuery}"... `);
+      process.stdout.write(`${indexStr} ${codeStr}: "${supply.name}" `);
 
-      const imageUrls = await searchImages(searchQuery);
+      let { candidates, engine } = await findCandidatesForQuery(searchQuery);
 
-      if (imageUrls.length === 0) {
-        console.log('⚠️  Sin resultados de búsqueda.');
+      // Si no encuentra nada, probar con consulta simplificada
+      if (candidates.length === 0) {
+        const altQuery = simplifyQuery(searchQuery);
+        if (altQuery !== searchQuery && altQuery.length > 3) {
+          const retry = await findCandidatesForQuery(altQuery);
+          candidates = retry.candidates;
+          engine = retry.engine;
+        }
+      }
+
+      if (candidates.length === 0) {
+        console.log(`-> ⚠️ Sin resultados en Bing ni DDG.`);
         notFoundCount++;
         await sleep(options.delay);
         continue;
       }
 
       if (options.dryRun) {
-        console.log(`🔎 [DRY-RUN] Se encontró imagen: ${imageUrls[0]}`);
+        console.log(`-> 🔎 [DRY-RUN / ${engine}] Encontrada: ${candidates[0].slice(0, 65)}...`);
         updatedCount++;
         await sleep(options.delay);
         continue;
@@ -274,22 +333,23 @@ async function main() {
         .replace(/[^a-z0-9_-]/g, '_');
       const baseFilename = `${slug}-${Date.now()}`;
 
-      const savedFilename = await downloadValidImage(
-        imageUrls,
+      const downloadResult = await downloadValidImage(
+        candidates,
         uploadsDir,
         baseFilename,
       );
 
-      if (!savedFilename) {
-        console.log('❌ Falló la descarga de los candidatos.');
+      if (!downloadResult) {
+        console.log(`-> ❌ Falló la descarga de los candidatos (${engine}).`);
         failedCount++;
       } else {
         // ACTUALIZAR ÚNICAMENTE LA COLUMNA images, DEJANDO TODO LO DEMÁS INTACTO
         await pool.query(
           `UPDATE supply SET images = $1, updated_at = NOW() WHERE id = $2`,
-          [[savedFilename], supply.id],
+          [[downloadResult.filename], supply.id],
         );
-        console.log(`✅ Guardado: ${savedFilename}`);
+        const kbSize = (downloadResult.size / 1024).toFixed(1);
+        console.log(`-> ✅ [${engine}] Guardado: ${downloadResult.filename} (${kbSize} KB)`);
         updatedCount++;
       }
 
