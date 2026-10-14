@@ -257,7 +257,10 @@ describe('StockTransferService', () => {
 
   describe('reject', () => {
     it('debe rechazar transferencia exitosamente', async () => {
-      mockManager.findOne.mockResolvedValueOnce(mockTransfer);
+      mockManager.findOne.mockResolvedValueOnce({
+        ...mockTransfer,
+        status: StockTransferStatus.InTransit,
+      });
       mockManager.save.mockImplementation((entity: any) =>
         Promise.resolve(entity),
       );

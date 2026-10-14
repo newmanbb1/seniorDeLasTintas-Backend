@@ -76,10 +76,14 @@ export class SupplyService {
 
     const sanitizeLike = (v: string) => v.replace(/[%_]/g, '\\$&');
 
-    if (search) {
+    if (search && search.trim()) {
+      const clean = sanitizeLike(search.trim());
       where = [
-        { ...baseWhere, name: ILike(`%${sanitizeLike(search)}%`) },
-        { ...baseWhere, code: ILike(`%${sanitizeLike(search)}%`) },
+        { ...baseWhere, name: ILike(`%${clean}%`) },
+        { ...baseWhere, code: ILike(`%${clean}%`) },
+        { ...baseWhere, brand: ILike(`%${clean}%`) },
+        { ...baseWhere, category: ILike(`%${clean}%`) },
+        { ...baseWhere, compatibility: ILike(`%${clean}%`) },
       ];
     } else {
       if (name) {

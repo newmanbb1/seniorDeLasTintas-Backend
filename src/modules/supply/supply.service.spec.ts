@@ -110,6 +110,22 @@ describe('SupplyService', () => {
 
       expect(result.data).toHaveLength(1);
     });
+
+    it('debe filtrar por término de búsqueda', async () => {
+      supplyRepository.findAndCount.mockResolvedValue([[mockSupply], 1]);
+
+      const result = await service.findAll({ search: 'Epson' });
+
+      expect(result.data).toHaveLength(1);
+      expect(supplyRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.arrayContaining([
+            expect.objectContaining({ name: expect.anything() }),
+            expect.objectContaining({ brand: expect.anything() }),
+          ]),
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {

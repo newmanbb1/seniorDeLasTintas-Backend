@@ -90,6 +90,7 @@ describe('AuthService', () => {
           JWT_EXPIRES_IN: '15m',
           JWT_REFRESH_EXPIRES_IN: '10h',
           JWT_SECRET: 'test-secret',
+          JWT_REFRESH_SECRET: 'test-refresh-secret',
           SYSTEM_AUDIT_USER_ID: '00000000-0000-4000-8000-000000000001',
         };
         return config[key];
@@ -134,7 +135,9 @@ describe('AuthService', () => {
     });
 
     it('debe lanzar error si el email ya existe', async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
+      userRepository.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockUser);
 
       await expect(
         service.register({
@@ -176,7 +179,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ email: 'admin@test.com', password: 'password123' }),
-      ).rejects.toThrow(ForbiddenException);
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -204,11 +207,12 @@ describe('AuthService', () => {
 
   describe('refresh', () => {
     it('debe renovar tokens correctamente', async () => {
-      const payload = { sub: 'user-1', type: 'refresh' };
+      const payload = { sub: 'user-1', type: 'refresh', jti: 'jti-123' };
       jwtService.verify.mockReturnValue(payload);
       refreshTokenRepository.findOne.mockResolvedValue({
         id: 'rt-1',
         user_id: 'user-1',
+        jti: 'jti-123',
         token: 'hashed-refresh',
         expires_at: new Date(Date.now() + 86400000),
         revoked: false,

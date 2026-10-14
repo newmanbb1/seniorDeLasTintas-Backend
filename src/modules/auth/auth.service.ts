@@ -259,7 +259,8 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-    return user;
+    const { password: _, ...profile } = user;
+    return profile;
   }
 
   async updateUser(
