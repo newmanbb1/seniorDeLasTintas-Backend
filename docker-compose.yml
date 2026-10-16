@@ -98,7 +98,7 @@ services:
     container_name: backend_nestjs
     restart: always
     ports:
-      - "3000:3000"
+      - "3002:3000"
     env_file:
       - .env
     depends_on:

@@ -102,9 +102,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? { message: entry }
           : mapValidationEntry(entry),
       );
+      const combinedMessage =
+        errors
+          .map((e) => (e.field ? `${e.field}: ${e.message}` : e.message))
+          .filter(Boolean)
+          .join(', ') || 'Validation failed';
       return {
         success: false,
-        message: 'Validation failed',
+        message: combinedMessage,
         errors,
       };
     }

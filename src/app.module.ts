@@ -16,6 +16,7 @@ import { SeedModule } from './modules/seed/seed.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { OrderModule } from './modules/order/order.module';
+import { CategoryModule } from './modules/category/category.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { OrderModule } from './modules/order/order.module';
     ChatbotModule,
     CustomerModule,
     OrderModule,
+    CategoryModule,
   ],
   controllers: [],
   providers: [
