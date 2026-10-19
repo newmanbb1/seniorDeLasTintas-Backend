@@ -33,7 +33,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',')
+      ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
       : process.env.NODE_ENV === 'production'
         ? (() => { throw new Error('CORS_ORIGIN must be set in production'); })()
         : [

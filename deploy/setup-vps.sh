@@ -34,6 +34,7 @@ log "Firewall básico (SSH + HTTP + HTTPS)..."
 ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow 80/tcp >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true
+ufw allow 443/udp >/dev/null 2>&1 || true
 ufw --force enable >/dev/null 2>&1 || true
 
 mkdir -p "$DEPLOY_PATH"

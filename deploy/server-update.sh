@@ -46,6 +46,15 @@ clone_or_pull() {
   fi
 }
 
+# Respaldo de seguridad y prevención de conflictos en Caddyfile
+if [[ -d "$BACKEND_DIR/.git" && -f "$BACKEND_DIR/Caddyfile" ]]; then
+  cp -a "$BACKEND_DIR/Caddyfile" "$BACKEND_DIR/Caddyfile.backup-$(date +%Y%m%d-%H%M%S)"
+  if ! git -C "$BACKEND_DIR" diff --quiet Caddyfile 2>/dev/null; then
+    log "Descartando modificaciones manuales en Caddyfile (respaldo guardado) para sincronizar versión con HTTPS del repositorio..."
+    git -C "$BACKEND_DIR" checkout -- Caddyfile
+  fi
+fi
+
 clone_or_pull "$BACKEND_DIR" "$BACKEND_REPO" "$BACKEND_BRANCH"
 clone_or_pull "$FRONTEND_DIR" "$FRONTEND_REPO" "$FRONTEND_BRANCH"
 
@@ -61,6 +70,14 @@ COMPOSE=(docker compose -f "$COMPOSE_FILE")
 
 log "Reiniciando servicios (volúmenes y .env se conservan)..."
 "${COMPOSE[@]}" up -d --remove-orphans
+
+log "Validando y recargando Caddy (HTTPS)..."
+if "${COMPOSE[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile; then
+  "${COMPOSE[@]}" exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
+  log "Caddy validado y recargado con HTTPS."
+else
+  log "ADVERTENCIA: La validación de Caddy falló. Revisa: docker logs --tail 50 caddy_proxy"
+fi
 
 log "Esperando backend..."
 for i in $(seq 1 30); do
@@ -81,4 +98,5 @@ log "Estado de contenedores:"
 log "Limpiando imágenes huérfanas..."
 docker image prune -f >/dev/null || true
 
-log "Deploy completado."
+log "Deploy completado. Prueba HTTPS externamente:"
+log "  curl -I https://xn--seordelastintas-zqb.tech"

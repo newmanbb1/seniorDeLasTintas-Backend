@@ -1,34 +1,21 @@
-# Caddyfile for Production Reverse Proxy
-#
-# Con dominio (recomendado): descomenta el bloque de abajo y reemplaza tudominio.com
-# Caddy obtiene certificados SSL de Let's Encrypt automaticamente.
-#
-# tudominio.com {
-#     encode gzip zstd
-#
-#     handle /api/* {
-#         reverse_proxy backend:3000
-#     }
-#
-#     handle /* {
-#         reverse_proxy frontend:80
-#     }
-# }
+# Caddyfile para Producción - Señor de las Tintas
+# Dominio oficial en Punycode (señordelastintas.tech)
+# Caddy gestiona y renueva automáticamente certificados TLS (Let's Encrypt / ZeroSSL)
+# y redirige automáticamente HTTP (puerto 80) a HTTPS (puerto 443).
 
-# Sin dominio (solo HTTP, pruebas en VPS antes de DNS):
-:80 {
-    # API Backend — usar handle (NO handle_path) para preservar el prefijo /api
-    handle /api/* {
-        reverse_proxy backend:3000
-    }
+xn--seordelastintas-zqb.tech, www.xn--seordelastintas-zqb.tech {
+	encode gzip zstd
 
-    # Frontend SPA
-    handle /* {
-        reverse_proxy frontend:80
-    }
+	# Backend NestJS — preserva el prefijo /api
+	handle /api/* {
+		reverse_proxy backend:3000
+	}
 
-    encode gzip zstd
+	# Frontend SPA (Nginx) — catch-all
+	handle {
+		reverse_proxy frontend:80
+	}
 }
 
-# Evolution API NO se expone publicamente.
+# Evolution API NO se expone públicamente.
 # El backend se conecta internamente a evolution:8080 en la red Docker.
