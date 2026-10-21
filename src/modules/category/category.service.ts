@@ -62,6 +62,7 @@ export class CategoryService implements OnModuleInit {
           color: this.getDefaultColor(name),
           is_active: true,
           display_order: 10,
+          created_by: process.env.SYSTEM_AUDIT_USER_ID || '00000000-0000-4000-8000-000000000001',
         });
         await this.categoryRepository.save(cat);
         count++;
@@ -192,7 +193,7 @@ export class CategoryService implements OnModuleInit {
     const category = this.categoryRepository.create({
       ...dto,
       name: dto.name.trim(),
-      created_by: userId,
+      created_by: userId || process.env.SYSTEM_AUDIT_USER_ID || '00000000-0000-4000-8000-000000000001',
       icon: dto.icon || this.getDefaultIcon(dto.name),
       color: dto.color || this.getDefaultColor(dto.name),
     });
@@ -224,7 +225,7 @@ export class CategoryService implements OnModuleInit {
     Object.assign(category, {
       ...dto,
       ...(newName ? { name: newName } : {}),
-      updated_by: userId,
+      updated_by: userId || process.env.SYSTEM_AUDIT_USER_ID || '00000000-0000-4000-8000-000000000001',
     });
 
     const saved = await this.categoryRepository.save(category);

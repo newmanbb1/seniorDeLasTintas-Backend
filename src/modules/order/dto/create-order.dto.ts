@@ -42,4 +42,9 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiProperty({ required: false, description: 'UUID de la sucursal' })
+  @IsOptional()
+  @IsUUID()
+  branch_id?: string;
 }

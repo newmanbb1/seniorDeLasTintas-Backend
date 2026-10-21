@@ -80,6 +80,8 @@ export class OrderService {
       }
     }
 
+    const branchId = userContext?.branch_id || dto.branch_id;
+
     const order = this.orderRepository.create({
       client_name: clientName,
       client_phone: clientPhone,
@@ -87,7 +89,7 @@ export class OrderService {
       status: OrderStatus.Pending,
       total,
       notes: dto.notes,
-      branch: userContext?.branch_id ? { id: userContext.branch_id } as any : undefined,
+      branch: branchId ? ({ id: branchId } as any) : undefined,
       created_by: userId,
       order_details: details as OrderDetail[],
     });
