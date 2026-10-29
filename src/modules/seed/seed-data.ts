@@ -1,3 +1,7 @@
+import { RESETEADORES_DATA } from './reseteadores-data';
+
+export const seedReseteadoresDigitales = RESETEADORES_DATA;
+
 export const seedAdmin = {
   email: 'admin@senordelastintas.com',
   password: 'Admin@123456',
@@ -177,6 +181,7 @@ export const seedSupplies = [
   { code: "ST-0138", name: "LITRO TINTA UV YELLOW", category: "Tintas", unit_of_measure: "litros", sale_price: 436.70, brand: "Genérico", umbral_min: 2, commercial_description: "LITRO TINTA UV YELLOW" },
   { code: "ST-0139", name: "LITRO YELLOW FOTO", category: "Tintas", unit_of_measure: "litros", sale_price: 69.16, brand: "Genérico", umbral_min: 2, commercial_description: "LITRO YELLOW FOTO" },
   { code: "ST-0140", name: "LITRO YELLOW UV", category: "Tintas", unit_of_measure: "litros", sale_price: 69.16, brand: "Genérico", umbral_min: 2, commercial_description: "LITRO YELLOW UV" },
+  ...RESETEADORES_DATA,
 ];
 
 export const seedEmployees = [

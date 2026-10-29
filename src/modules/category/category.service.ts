@@ -100,6 +100,7 @@ export class CategoryService implements OnModuleInit {
     if (lower.includes('tinta')) return 'cyan';
     if (lower.includes('cartucho')) return 'fuchsia';
     if (lower.includes('repuesto')) return 'amber';
+    if (lower.includes('digital')) return 'sky';
     if (lower.includes('reset')) return 'indigo';
     if (lower.includes('chip')) return 'blue';
     if (lower.includes('cabezal')) return 'emerald';
