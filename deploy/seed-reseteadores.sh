@@ -35,16 +35,15 @@ fi
 
 echo "📦 Aplicando migración SQL en servicio: $DB_SERVICE..."
 
-# Ejecutar el archivo SQL directamente dentro del contenedor de base de datos
-docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" psql -U postgres -d TintasDB < "$SQL_FILE"
+# Ejecutar el archivo SQL usando las variables de entorno internas del contenedor (POSTGRES_USER y POSTGRES_DB)
+docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$SQL_FILE"
 
 echo ""
 echo "🔍 Verificando datos insertados..."
-docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" psql -U postgres -d TintasDB -c "
-SELECT count(*) AS total_reseteadores FROM supply WHERE category = 'Reseteadores digitales' AND deleted_at IS NULL;
-SELECT name, icon, color, is_active FROM category WHERE name = 'Reseteadores digitales';
-SELECT count(*) AS total_inventarios FROM inventory i JOIN supply s ON i.supply_id = s.id WHERE s.category = 'Reseteadores digitales';
-"
+docker compose -f "$COMPOSE_FILE" exec -T "$DB_SERVICE" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+SELECT count(*) AS total_reseteadores FROM supply WHERE category = '\''Reseteadores digitales'\'' AND deleted_at IS NULL;
+SELECT name, icon, color, is_active FROM category WHERE name = '\''Reseteadores digitales'\'';
+SELECT count(*) AS total_inventarios FROM inventory i JOIN supply s ON i.supply_id = s.id WHERE s.category = '\''Reseteadores digitales'\'';
+"'
 
 echo "🎉 ¡Migración de Reseteadores Digitales completada exitosamente!"
-
